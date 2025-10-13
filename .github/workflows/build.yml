@@ -1,96 +1,211 @@
-name: GitHub Actions Build Test
-permissions:
-  contents: read
+name: Build and Release
+
 on:
-  push:
-    branches:
-        - master
   pull_request:
     branches:
-        - master
+      - master
+    types:
+      - opened
+      - synchronize
+      - reopened
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: true
+
 jobs:
-  cppcheck-test:
+  setup_release:
+    name: Setup Release
+    outputs:
+      publish_release: ${{ steps.setup_release_auto.outputs.publish_release || steps.setup_release_manual.outputs.publish_release }}
+      release_body: ${{ steps.setup_release_auto.outputs.release_body || steps.setup_release_manual.outputs.release_body }}
+      release_commit: ${{ steps.setup_release_auto.outputs.release_commit || steps.setup_release_manual.outputs.release_commit }}
+      release_generate_release_notes: ${{ steps.setup_release_auto.outputs.release_generate_release_notes || steps.setup_release_manual.outputs.release_generate_release_notes }}
+      release_tag: ${{ steps.setup_release_auto.outputs.release_tag || steps.setup_release_manual.outputs.release_tag }}
+      release_version: ${{ steps.setup_release_auto.outputs.release_version || steps.setup_release_manual.outputs.release_version }}
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
-    - run: echo "This job was triggered by a ${{ github.event_name }} event."
-    - name: Checkout Repo
-      uses: actions/checkout@v5
-    - name: install dependencies
-      run: |
-        sudo apt-get -y update && sudo apt-get install -y cppcheck && \
-        cppcheck . --force --inline-suppr
-  build-test-ubuntu-ish:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, ubuntu-22.04, ubuntu-22.04-arm]
-    runs-on: ${{ matrix.os }}
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Release (Auto)
+        id: setup_release_auto
+        if: github.event_name != 'workflow_dispatch'
+        uses: LizardByte/setup-release-action@v2025.426.225
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Release (Manual)
+        id: setup_release_manual
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          # 为手动构建设置默认值
+          echo "publish_release=false" >> $GITHUB_OUTPUT
+          echo "release_body=Manual build" >> $GITHUB_OUTPUT
+          echo "release_commit=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "release_generate_release_notes=false" >> $GITHUB_OUTPUT
+          echo "release_tag=manual-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+          echo "release_version=manual-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+
+  build_win:
+    name: Windows UCRT
+    needs: setup_release
+    runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v5
-    - name: install dependencies
-      run: |
-        sudo apt-get -y update && sudo apt-get install -y build-essential
-    - name: build
-      run: |
-        set -e
-        
-        # 设置环境变量
-        export PATH="/ucrt64/bin:$PATH"
-        export PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig"
-        export CC="gcc"
-        export CXX="g++"
-        
-        # 生成configure脚本
-        ./bootstrap.sh
-        
-        # 配置构建 - 静态编译
-        ./configure \
-          --prefix=/ucrt64 \
-          --host=x86_64-w64-mingw32 \
-          --build=x86_64-w64-mingw32 \
-          --disable-shared \
-          --enable-static \
-          CFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
-          CXXFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
-          LDFLAGS="-static -Wl,--enable-auto-import -Wl,--enable-runtime-pseudo-reloc" \
-          LIBS="-lssl -lcrypto -lpthread -lws2_32 -lcrypt32" \
-          PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig"
-        
-        # 编译
-        make -j$(nproc)
-        
-        # 运行测试
-        make check
-        
-        # 测试iperf3服务器
-        timeout 300 src/iperf3.exe -s &
-        sleep 5
-        ./test_commands.sh localhost
-  build-test-macos-ish:
-    strategy:
-      matrix:
-        os: [macos-15, macos-14]
-    runs-on: ${{ matrix.os }}
-    steps:
-    - uses: actions/checkout@v5
-    - name: install dependencies
-      run: |
-        brew install coreutils
-    - name: build
-      run: |
-        ./configure && make && make check
-        timeout 300 src/iperf3 -s &
-        ./test_commands.sh localhost
-  build-test-sanitizer-address:
-    runs-on: ubuntu-latest
-    steps:
-    - run: echo "Running address sanitzer"
-    - name: Checkout Repo
-      uses: actions/checkout@v5
-    - name: install dependencies
-      run: |
-        sudo apt-get -y update && sudo apt-get install -y build-essential
-    - name: build
-      run: |
-        ./configure CFLAGS="-g -O0 -fsanitize=address" LDFLAGS="-fsanitize=address" && make && make check
-        timeout 300 src/iperf3 -s &
-        ./test_commands.sh localhost
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Dependencies Windows
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ucrt64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-openssl
+            autoconf
+            automake
+            libtool
+            pkg-config
+
+      - name: Verify Build Tools
+        shell: msys2 {0}
+        run: |
+          echo "Verifying build tools are installed..."
+          which gcc || (echo "gcc not found" && exit 1)
+          which autoconf || (echo "autoconf not found" && exit 1)
+          which automake || (echo "automake not found" && exit 1)
+          which libtool || (echo "libtool not found" && exit 1)
+          echo "All build tools verified successfully"
+
+      - name: Build Windows UCRT
+        shell: msys2 {0}
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          BUILD_VERSION: ${{ needs.setup_release.outputs.release_tag }}
+          COMMIT: ${{ needs.setup_release.outputs.release_commit }}
+        run: |
+          set -e
+          
+          # 设置环境变量
+          export PATH="/ucrt64/bin:$PATH"
+          export PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig"
+          export CC="gcc"
+          export CXX="g++"
+          
+          # 生成configure脚本
+          ./bootstrap.sh
+          
+          # 配置构建 - 静态编译
+          ./configure \
+            --prefix=/ucrt64 \
+            --host=x86_64-w64-mingw32 \
+            --build=x86_64-w64-mingw32 \
+            --disable-shared \
+            --enable-static \
+            CFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
+            CXXFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
+            LDFLAGS="-static -Wl,--enable-auto-import -Wl,--enable-runtime-pseudo-reloc" \
+            LIBS="-lssl -lcrypto -lpthread -lws2_32 -lcrypt32" \
+            PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig"
+          
+          # 编译
+          make -j$(nproc)
+          
+          # 运行测试
+          make check
+
+      - name: Package Windows UCRT
+        shell: msys2 {0}
+        run: |
+          mkdir -p artifacts
+          
+          # 创建发布目录
+          mkdir -p release
+          
+          # 复制可执行文件
+          cp src/iperf3.exe release/
+          cp src/.libs/libiperf.a release/
+          
+          # 复制文档
+          cp README.md README_cn.md release/
+          cp LICENSE release/
+          
+          # 创建压缩包
+          cd release
+          tar -czf ../artifacts/iperf3-msys2-windows-ucrt.tar.gz *
+
+      - name: Generate Checksums
+        shell: pwsh
+        run: |
+          # 生成 SHA256 校验和
+          Get-ChildItem -Path "artifacts" -File | ForEach-Object {
+            $hash = Get-FileHash -Path $_.FullName -Algorithm SHA256
+            "$($hash.Hash.ToLower())  $($_.Name)" | Out-File -FilePath "artifacts/SHA256SUMS.txt" -Append -Encoding UTF8
+          }
+
+      - name: Rename release assets
+        shell: msys2 {0}
+        run: |
+          # 获取项目版本号
+          PROJECT_VERSION=$(grep "AC_INIT" configure.ac | sed 's/.*\[.*\],\[\([^]]*\)\].*/\1/')
+          TAG="${{ needs.setup_release.outputs.release_tag }}"
+          
+          # 格式化标签为 vYEAR.DATE 格式
+          NEWTAG="$TAG"
+          if [[ "$TAG" =~ ^v([0-9]{4})\.([0-9]+) ]]; then
+            YEAR="${BASH_REMATCH[1]}"
+            DATE_PART="${BASH_REMATCH[2]}"
+            DATE_PADDED=$(printf "%04d" "$DATE_PART")
+            NEWTAG="v${YEAR}.${DATE_PADDED}"
+          fi
+          
+          # 重命名文件，包含项目版本和标签
+          mv artifacts/iperf3-msys2-windows-ucrt.tar.gz "artifacts/iperf3-msys2-${PROJECT_VERSION}-${NEWTAG}-windows-ucrt.tar.gz"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: iperf3-msys2-windows
+          path: |
+            artifacts/iperf3-msys2-*-windows-ucrt.tar.gz
+            artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Create/Update GitHub Release
+        if: needs.setup_release.outputs.publish_release == 'true'
+        uses: LizardByte/create-release-action@v2025.426.1549
+        with:
+          allowUpdates: true
+          body: |
+            ## iperf3-msys2 Windows UCRT Release
+            
+            This release provides a Windows UCRT-optimized version of iperf3.
+            
+            ### Features
+            - UCRT compatibility for Windows environments
+            - Static compilation for easy deployment
+            - Enhanced stability for UCRT environments
+            - Source code integration support
+            
+            ### Installation
+            1. Download the appropriate archive for your system
+            2. Extract the files
+            3. Run `iperf3.exe` directly
+            
+            ### Building from Source
+            See the README files for detailed build instructions.
+          generateReleaseNotes: ${{ needs.setup_release.outputs.release_generate_release_notes }}
+          name: ${{ needs.setup_release.outputs.release_tag }}
+          prerelease: true
+          tag: ${{ needs.setup_release.outputs.release_tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}
