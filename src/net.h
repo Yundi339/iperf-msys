@@ -27,6 +27,15 @@
 #ifndef __NET_H
 #define __NET_H
 
+#include "iperf_config.h"
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <netdb.h>
+#endif
+
 int timeout_connect(int s, const struct sockaddr *name, socklen_t namelen, int timeout);
 int create_socket(int domain, int type, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, struct addrinfo **server_res_out);
 int netdial(int domain, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, int timeout);

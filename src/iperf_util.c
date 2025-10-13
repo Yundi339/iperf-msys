@@ -34,10 +34,130 @@
 #include <stdio.h>
 #include <signal.h>
 #include <stdlib.h>
+
+#include "cjson.h"
+#include "iperf.h"
+#include "iperf_api.h"
+
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#include <windows.h>
+// Windows兼容的getrusage实现
+struct rusage {
+    struct timeval ru_utime;
+    struct timeval ru_stime;
+    long ru_maxrss;
+    long ru_ixrss;
+    long ru_idrss;
+    long ru_isrss;
+    long ru_minflt;
+    long ru_majflt;
+    long ru_nswap;
+    long ru_inblock;
+    long ru_oublock;
+    long ru_msgsnd;
+    long ru_msgrcv;
+    long ru_nsignals;
+    long ru_nvcsw;
+    long ru_nivcsw;
+};
+
+#define RUSAGE_SELF 0
+
+int getrusage(int who, struct rusage *usage) {
+    FILETIME creation_time, exit_time, kernel_time, user_time;
+    ULARGE_INTEGER kernel_uli, user_uli;
+    
+    if (usage == NULL) return -1;
+    
+    memset(usage, 0, sizeof(struct rusage));
+    
+    if (GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time, &kernel_time, &user_time)) {
+        kernel_uli.LowPart = kernel_time.dwLowDateTime;
+        kernel_uli.HighPart = kernel_time.dwHighDateTime;
+        user_uli.LowPart = user_time.dwLowDateTime;
+        user_uli.HighPart = user_time.dwHighDateTime;
+        
+        usage->ru_stime.tv_sec = (long)(kernel_uli.QuadPart / 10000000);
+        usage->ru_stime.tv_usec = (long)((kernel_uli.QuadPart % 10000000) / 10);
+        usage->ru_utime.tv_sec = (long)(user_uli.QuadPart / 10000000);
+        usage->ru_utime.tv_usec = (long)((user_uli.QuadPart % 10000000) / 10);
+    }
+    
+    return 0;
+}
+
+// Windows兼容的uname实现
+struct utsname {
+    char sysname[256];
+    char nodename[256];
+    char release[256];
+    char version[256];
+    char machine[256];
+};
+
+int uname(struct utsname *name) {
+    if (name == NULL) return -1;
+    
+    memset(name, 0, sizeof(struct utsname));
+    
+    strcpy(name->sysname, "Windows");
+    
+    // 获取计算机名
+    DWORD size = sizeof(name->nodename);
+    GetComputerNameA(name->nodename, &size);
+    
+    // 获取Windows版本信息
+    OSVERSIONINFOA osvi;
+    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOA);
+    if (GetVersionExA(&osvi)) {
+        snprintf(name->release, sizeof(name->release), "%ld.%ld", (long)osvi.dwMajorVersion, (long)osvi.dwMinorVersion);
+        snprintf(name->version, sizeof(name->version), "Build %ld %s", (long)osvi.dwBuildNumber, osvi.szCSDVersion);
+    }
+    
+    // 获取系统架构
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    switch (si.wProcessorArchitecture) {
+        case PROCESSOR_ARCHITECTURE_AMD64:
+            strcpy(name->machine, "x86_64");
+            break;
+        case PROCESSOR_ARCHITECTURE_INTEL:
+            strcpy(name->machine, "i386");
+            break;
+        case PROCESSOR_ARCHITECTURE_ARM:
+            strcpy(name->machine, "arm");
+            break;
+        case PROCESSOR_ARCHITECTURE_ARM64:
+            strcpy(name->machine, "aarch64");
+            break;
+        default:
+            strcpy(name->machine, "unknown");
+            break;
+    }
+    
+    return 0;
+}
+
+// Windows兼容的daemon实现
+#ifndef HAVE_DAEMON
+int daemon(int nochdir, int noclose) {
+    // Windows下简化实现，不进行fork操作
+    // 直接返回0表示成功
+    return 0;
+}
+#endif
+#else
 #include <unistd.h>
 #include <string.h>
 #include <stdarg.h>
+#ifdef HAVE_WINSOCK2_H
+// Windows has select in winsock2.h, no need for sys/select.h
+#else
 #include <sys/select.h>
+#endif
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -45,10 +165,7 @@
 #include <time.h>
 #include <errno.h>
 #include <fcntl.h>
-
-#include "cjson.h"
-#include "iperf.h"
-#include "iperf_api.h"
+#endif
 
 /*
  * Read entropy from /dev/urandom
@@ -491,6 +608,7 @@ iperf_dump_fdset(FILE *fp, const char *str, int nfds, fd_set *fds)
  * Cobbled together from various daemon(3) implementations,
  * not intended to be general-purpose. */
 #ifndef HAVE_DAEMON
+#ifndef HAVE_WINSOCK2_H
 int daemon(int nochdir, int noclose)
 {
     pid_t pid = 0;
@@ -547,6 +665,7 @@ int daemon(int nochdir, int noclose)
     }
     return (0);
 }
+#endif /* HAVE_WINSOCK2_H */
 #endif /* HAVE_DAEMON */
 
 /* Compatibility version of getline(3) for systems that don't have it.. */

@@ -29,7 +29,14 @@
 
 #include "iperf_config.h"
 #include "cjson.h"
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+// Windows has select in winsock2.h, no need for sys/select.h
+#else
 #include <sys/select.h>
+#include <sys/time.h>
+#endif
 #include <stddef.h>
 
 int readentropy(void *out, size_t outsize);

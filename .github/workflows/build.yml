@@ -1,4 +1,4 @@
-name: GitHub Actions Build Test - Windows MSYS2 UCRT
+name: GitHub Actions Build Test
 permissions:
   contents: read
 on:
@@ -8,88 +8,30 @@ on:
   pull_request:
     branches:
         - master
-  workflow_dispatch:
-
-concurrency:
-  group: '${{ github.workflow }}-${{ github.ref }}'
-  cancel-in-progress: true
-
 jobs:
-  build-test-windows-msys2-ucrt:
-    name: Windows MSYS2 UCRT Build
-    runs-on: windows-latest
+  cppcheck-test:
+    runs-on: ubuntu-latest
     steps:
+    - run: echo "This job was triggered by a ${{ github.event_name }} event."
     - name: Checkout Repo
       uses: actions/checkout@v5
-      with:
-        submodules: recursive
-
-    - name: Setup MSYS2
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: ucrt64
-        update: true
-        install: >-
-          wget
-          base-devel
-          git
-          autotools
-          automake-wrapper
-          libtool
-
-    - name: Update Windows dependencies
-      env:
-        gcc_version: '15.1.0-5'
-      shell: msys2 {0}
+    - name: install dependencies
       run: |
-        set -e
-        
-        # 更新pacman
-        pacman --noconfirm -Syu
-        
-        # 定义损坏的依赖
-        broken_deps=(
-          "mingw-w64-ucrt-x86_64-gcc"
-          "mingw-w64-ucrt-x86_64-gcc-libs"
-        )
-        
-        # 下载并安装工作版本的GCC
-        tarballs=""
-        for dep in "${broken_deps[@]}"; do
-          tarball="${dep}-${gcc_version}-any.pkg.tar.zst"
-          echo "下载 ${tarball}..."
-          wget https://repo.msys2.org/mingw/ucrt64/${tarball}
-          tarballs="${tarballs} ${tarball}"
-        done
-        
-        # 安装损坏的依赖
-        if [ -n "$tarballs" ]; then
-          pacman -U --noconfirm ${tarballs}
-        fi
-        
-        # 定义依赖包
-        dependencies=(
-          "mingw-w64-ucrt-x86_64-openssl"
-          "mingw-w64-ucrt-x86_64-pkg-config"
-          "mingw-w64-ucrt-x86_64-toolchain"
-        )
-        
-        # 安装依赖，忽略损坏的包
-        pacman -Syu --noconfirm --ignore="$(IFS=,; echo "${broken_deps[*]}")" "${dependencies[@]}"
-
-    - name: Verify Build Tools
-      shell: msys2 {0}
+        sudo apt-get -y update && sudo apt-get install -y cppcheck && \
+        cppcheck . --force --inline-suppr
+  build-test-ubuntu-ish:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-22.04, ubuntu-22.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v5
+    - name: install dependencies
       run: |
-        echo "验证构建工具是否已安装..."
-        which gcc || (echo "gcc not found" && exit 1)
-        which g++ || (echo "g++ not found" && exit 1)
-        which make || (echo "make not found" && exit 1)
-        which pkg-config || (echo "pkg-config not found" && exit 1)
-        echo "所有构建工具验证成功"
-
-    - name: Build iperf3
-      shell: msys2 {0}
+        sudo apt-get -y update && sudo apt-get install -y build-essential
+    - name: build
       run: |
+<<<<<<< HEAD
         set -e
         
         # 设置环境变量
@@ -101,8 +43,18 @@ jobs:
         # 生成configure脚本
         ./bootstrap.sh
         
-        # 配置构建
-        ./configure --prefix=/ucrt64 --host=x86_64-w64-mingw32
+        # 配置构建 - 静态编译
+        ./configure \
+          --prefix=/ucrt64 \
+          --host=x86_64-w64-mingw32 \
+          --build=x86_64-w64-mingw32 \
+          --disable-shared \
+          --enable-static \
+          CFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
+          CXXFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
+          LDFLAGS="-static -Wl,--enable-auto-import -Wl,--enable-runtime-pseudo-reloc" \
+          LIBS="-lssl -lcrypto -lpthread -lws2_32 -lcrypt32" \
+          PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig"
         
         # 编译
         make -j$(nproc)
@@ -113,29 +65,37 @@ jobs:
         # 测试iperf3服务器
         timeout 300 src/iperf3.exe -s &
         sleep 5
+=======
+        ./configure && make && make check
+        timeout 300 src/iperf3 -s &
+>>>>>>> parent of 8168547 (feature: 添加msys2CI)
         ./test_commands.sh localhost
-        
-        # 安装到临时目录
-        make DESTDIR=/tmp/install install
-        
-        # 验证安装
-        ls -la /tmp/install/ucrt64/bin/iperf3.exe
-
-    - name: Package iperf3
-      shell: msys2 {0}
+  build-test-macos-ish:
+    strategy:
+      matrix:
+        os: [macos-15, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v5
+    - name: install dependencies
       run: |
-        mkdir -p artifacts
-        
-        # 创建便携版ZIP包
-        cd /tmp/install/ucrt64
-        zip -r /d/$(pwd | sed 's|/d/||')/artifacts/iperf3-windows-ucrt.zip bin/iperf3.exe lib/
-        
-        # 显示包内容
-        ls -la /d/$(pwd | sed 's|/d/||')/artifacts/
-
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: iperf3-windows-ucrt
-        path: artifacts/iperf3-windows-ucrt.zip
-        if-no-files-found: error
+        brew install coreutils
+    - name: build
+      run: |
+        ./configure && make && make check
+        timeout 300 src/iperf3 -s &
+        ./test_commands.sh localhost
+  build-test-sanitizer-address:
+    runs-on: ubuntu-latest
+    steps:
+    - run: echo "Running address sanitzer"
+    - name: Checkout Repo
+      uses: actions/checkout@v5
+    - name: install dependencies
+      run: |
+        sudo apt-get -y update && sudo apt-get install -y build-essential
+    - name: build
+      run: |
+        ./configure CFLAGS="-g -O0 -fsanitize=address" LDFLAGS="-fsanitize=address" && make && make check
+        timeout 300 src/iperf3 -s &
+        ./test_commands.sh localhost

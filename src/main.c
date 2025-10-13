@@ -32,20 +32,59 @@
 #include <getopt.h>
 #include <errno.h>
 #include <signal.h>
+
+#include "iperf_util.h"
+#include "iperf_locale.h"
+#include "net.h"
+#include "units.h"
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+// Windows兼容的信号定义 - 只在未定义时定义
+#ifndef SIGPIPE
+#define SIGPIPE 13
+#endif
+#ifndef SIG_IGN
+#define SIG_IGN ((void(*)(int))1)
+#endif
+#ifndef SIG_DFL
+#define SIG_DFL ((void(*)(int))0)
+#endif
+#ifndef SIGHUP
+#define SIGHUP 1
+#endif
+#ifndef SIGINT
+#define SIGINT 2
+#endif
+#ifndef SIGTERM
+#define SIGTERM 15
+#endif
+
+// Windows兼容的信号处理函数
+void (*signal(int sig, void (*func)(int)))(int) {
+    // Windows下简化处理，直接返回原函数
+    return func;
+}
+
+// Windows兼容的__attribute__定义
+#define __attribute__(x)
+#else
 #include <unistd.h>
 #include <stdint.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <netdb.h>
+#endif
 
 #include "iperf.h"
 #include "iperf_api.h"
-#include "iperf_util.h"
-#include "iperf_locale.h"
-#include "net.h"
-#include "units.h"
+#ifdef HAVE_WINSOCK2_H
+// Windows has netdb functions in ws2tcpip.h, no need for netdb.h
+#else
+#include <netdb.h>
+#endif
 
 
 static int run(struct iperf_test *test);
@@ -67,7 +106,7 @@ main(int argc, char **argv)
      */
 #ifndef HAVE_STDATOMIC_H
 #ifdef __GNUC__
-    if (! __atomic_always_lock_free (sizeof (u_int64_t), 0)) {
+    if (! __atomic_always_lock_free (sizeof (atomic_uint_fast64_t), 0)) {
 #endif // __GNUC__
         fprintf(stderr, "Warning: Cannot guarantee lock-free operation with 64-bit data types\n");
 #ifdef __GNUC__

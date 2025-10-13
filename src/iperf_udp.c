@@ -28,6 +28,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include "iperf.h"
+#include "iperf_api.h"
+#include "iperf_util.h"
+#include "iperf_udp.h"
+#include "timer.h"
+#include "net.h"
+#include "cjson.h"
+
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <unistd.h>
 #include <assert.h>
 #include <arpa/inet.h>
@@ -37,15 +49,13 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <sys/time.h>
+#ifdef HAVE_WINSOCK2_H
+// Windows has select in winsock2.h, no need for sys/select.h
+#else
 #include <sys/select.h>
+#endif
+#endif
 
-#include "iperf.h"
-#include "iperf_api.h"
-#include "iperf_util.h"
-#include "iperf_udp.h"
-#include "timer.h"
-#include "net.h"
-#include "cjson.h"
 
 /* iperf_udp_recv
  *
@@ -298,11 +308,11 @@ iperf_udp_buffercheck(struct iperf_test *test, int s)
     socklen_t optlen;
 
     if ((opt = test->settings->socket_bufsize)) {
-        if (setsockopt(s, SOL_SOCKET, SO_RCVBUF, &opt, sizeof(opt)) < 0) {
+        if (setsockopt(s, SOL_SOCKET, SO_RCVBUF, (const char*)&opt, sizeof(opt)) < 0) {
             i_errno = IESETBUF;
             return -1;
         }
-        if (setsockopt(s, SOL_SOCKET, SO_SNDBUF, &opt, sizeof(opt)) < 0) {
+        if (setsockopt(s, SOL_SOCKET, SO_SNDBUF, (const char*)&opt, sizeof(opt)) < 0) {
             i_errno = IESETBUF;
             return -1;
         }
@@ -310,7 +320,7 @@ iperf_udp_buffercheck(struct iperf_test *test, int s)
 
     /* Read back and verify the sender socket buffer size */
     optlen = sizeof(sndbuf_actual);
-    if (getsockopt(s, SOL_SOCKET, SO_SNDBUF, &sndbuf_actual, &optlen) < 0) {
+    if (getsockopt(s, SOL_SOCKET, SO_SNDBUF, (char*)&sndbuf_actual, &optlen) < 0) {
 	i_errno = IESETBUF;
 	return -1;
     }
@@ -332,7 +342,7 @@ iperf_udp_buffercheck(struct iperf_test *test, int s)
 
     /* Read back and verify the receiver socket buffer size */
     optlen = sizeof(rcvbuf_actual);
-    if (getsockopt(s, SOL_SOCKET, SO_RCVBUF, &rcvbuf_actual, &optlen) < 0) {
+    if (getsockopt(s, SOL_SOCKET, SO_RCVBUF, (char*)&rcvbuf_actual, &optlen) < 0) {
 	i_errno = IESETBUF;
 	return -1;
     }
@@ -398,7 +408,7 @@ iperf_udp_accept(struct iperf_test *test)
      * of the socket to the client.
      */
     len = sizeof(sa_peer);
-    if ((sz = recvfrom(test->prot_listener, &buf, sizeof(buf), 0, (struct sockaddr *) &sa_peer, &len)) < 0) {
+    if ((sz = recvfrom(test->prot_listener, (char*)&buf, sizeof(buf), 0, (struct sockaddr *) &sa_peer, &len)) < 0) {
         i_errno = IESTREAMACCEPT;
         return -1;
     }
@@ -440,7 +450,7 @@ iperf_udp_accept(struct iperf_test *test)
 	    if (test->debug) {
 		printf("Setting fair-queue socket pacing to %"PRIu64"\n", fqrate);
 	    }
-	    if (setsockopt(s, SOL_SOCKET, SO_MAX_PACING_RATE, &fqrate, sizeof(fqrate)) < 0) {
+	    if (setsockopt(s, SOL_SOCKET, SO_MAX_PACING_RATE, (const char*)&fqrate, sizeof(fqrate)) < 0) {
 		warning("Unable to set socket pacing");
 	    }
 	}
@@ -557,7 +567,7 @@ iperf_udp_connect(struct iperf_test *test)
 	    if (test->debug) {
 		printf("Setting fair-queue socket pacing to %"PRIu64"\n", fqrate);
 	    }
-	    if (setsockopt(s, SOL_SOCKET, SO_MAX_PACING_RATE, &fqrate, sizeof(fqrate)) < 0) {
+	    if (setsockopt(s, SOL_SOCKET, SO_MAX_PACING_RATE, (const char*)&fqrate, sizeof(fqrate)) < 0) {
 		warning("Unable to set socket pacing");
 	    }
 	}
@@ -579,7 +589,7 @@ iperf_udp_connect(struct iperf_test *test)
     /* 30 sec timeout for a case when there is a network problem. */
     tv.tv_sec = 30;
     tv.tv_usec = 0;
-    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(struct timeval));
 #endif
 
     /*
@@ -604,7 +614,7 @@ iperf_udp_connect(struct iperf_test *test)
     if (test->reverse) /* In reverse mode allow few packets to have the "accept" response - to handle out of order packets */
         max_len_wait_for_reply += MAX_REVERSE_OUT_OF_ORDER_PACKETS * test->settings->blksize;
     do {
-        if ((sz = recv(s, &buf, sizeof(buf), 0)) < 0) {
+        if ((sz = recv(s, (char*)&buf, sizeof(buf), 0)) < 0) {
             i_errno = IESTREAMREAD;
             return -1;
         }

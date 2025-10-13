@@ -56,6 +56,14 @@ if test "x$GCC" = "xyes"; then
   CFLAGS="$CFLAGS -Wall"
 fi
 
+# Add MinGW-specific flags
+case $host in
+   *-*-mingw*)
+     CFLAGS="$CFLAGS -D_WIN32_WINNT=0x0601"
+     CXXFLAGS="$CXXFLAGS -D_WIN32_WINNT=0x0601"
+     ;;
+esac
+
 # Check if enable profiling
 AC_ARG_ENABLE([profiling],
     AS_HELP_STRING([--enable-profiling], [Enable iperf3 profiling binary]))
@@ -67,16 +75,41 @@ echo "floor()"
 exit 1
 ])
 
-# On illumos we need -lsocket
-AC_SEARCH_LIBS(socket, [socket], [], [
-echo "socket()"
-exit 1
-])
+# On illumos we need -lsocket, on Windows we need -lws2_32
+case $host in
+   *-*-mingw*)
+     # For MinGW, we need to manually check for ws2_32
+     AC_CHECK_LIB([ws2_32], [socket], [
+       LIBS="-lws2_32 $LIBS"
+     ], [
+       echo "socket() not found in ws2_32"
+       exit 1
+     ])
+     ;;
+   *)
+     AC_SEARCH_LIBS(socket, [socket], [], [
+       echo "socket()"
+       exit 1
+     ])
+     ;;
+esac
 
-# On illumos inet_ntop in in -lnsl
-AC_SEARCH_LIBS(inet_ntop, [nsl], [], [
-echo "inet_ntop()"
-exit 1
+# On illumos inet_ntop in in -lnsl, on Windows it's in ws2_32
+case $host in
+   *-*-mingw*)
+     # inet_ntop is already in ws2_32, no need to search again
+     ;;
+   *)
+     AC_SEARCH_LIBS(inet_ntop, [nsl], [], [
+       echo "inet_ntop()"
+       exit 1
+     ])
+     ;;
+esac
+
+# On Windows, check for winsock2 library
+AC_SEARCH_LIBS(WSAStartup, [ws2_32], [], [
+echo "WSAStartup() not found"
 ])
 
 # Checks for typedefs, structures, and compiler characteristics.
@@ -132,6 +165,7 @@ AC_ARG_WITH([sctp],
 )
 
 AC_CHECK_HEADERS([linux/tcp.h])
+AC_CHECK_HEADERS([winsock2.h ws2tcpip.h])
 
 # Check for SCTP support
 if $try_sctp; then
@@ -171,6 +205,9 @@ else
     if $have_ssl; then
         case $host in
            *-*-cygwin)
+             CFLAGS="$CFLAGS -DNOCRYPT"
+             ;;
+           *-*-mingw*)
              CFLAGS="$CFLAGS -DNOCRYPT"
              ;;
         esac

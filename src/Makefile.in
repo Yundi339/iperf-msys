@@ -147,7 +147,8 @@ am__uninstall_files_from_dir = { \
        $(am__cd) "$$dir" && echo $$files | $(am__xargs_n) 40 $(am__rm_f); }; \
   }
 LTLIBRARIES = $(lib_LTLIBRARIES)
-libiperf_la_LIBADD =
+am__DEPENDENCIES_1 =
+libiperf_la_DEPENDENCIES = $(am__DEPENDENCIES_1)
 am_libiperf_la_OBJECTS = cjson.lo iperf_api.lo iperf_error.lo \
 	iperf_auth.lo iperf_client_api.lo iperf_locale.lo \
 	iperf_server_api.lo iperf_tcp.lo iperf_udp.lo iperf_sctp.lo \
@@ -158,9 +159,12 @@ AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
+libiperf_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
+	$(libiperf_la_LDFLAGS) $(LDFLAGS) -o $@
 am_iperf3_OBJECTS = iperf3-main.$(OBJEXT)
 iperf3_OBJECTS = $(am_iperf3_OBJECTS)
-iperf3_DEPENDENCIES = libiperf.la
+iperf3_DEPENDENCIES = libiperf.la $(am__DEPENDENCIES_1)
 iperf3_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(iperf3_CFLAGS) $(CFLAGS) \
 	$(iperf3_LDFLAGS) $(LDFLAGS) -o $@
@@ -192,38 +196,39 @@ am__objects_1 = iperf3_profile-cjson.$(OBJEXT) \
 @ENABLE_PROFILING_TRUE@	iperf3_profile-main.$(OBJEXT) \
 @ENABLE_PROFILING_TRUE@	$(am__objects_1)
 iperf3_profile_OBJECTS = $(am_iperf3_profile_OBJECTS)
-@ENABLE_PROFILING_TRUE@iperf3_profile_DEPENDENCIES = libiperf.la
+@ENABLE_PROFILING_TRUE@iperf3_profile_DEPENDENCIES = libiperf.la \
+@ENABLE_PROFILING_TRUE@	$(am__DEPENDENCIES_1)
 iperf3_profile_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(iperf3_profile_CFLAGS) $(CFLAGS) $(iperf3_profile_LDFLAGS) \
 	$(LDFLAGS) -o $@
 am_t_api_OBJECTS = t_api-t_api.$(OBJEXT)
 t_api_OBJECTS = $(am_t_api_OBJECTS)
-t_api_DEPENDENCIES = libiperf.la
+t_api_DEPENDENCIES = libiperf.la $(am__DEPENDENCIES_1)
 t_api_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(t_api_CFLAGS) $(CFLAGS) \
 	$(t_api_LDFLAGS) $(LDFLAGS) -o $@
 am_t_auth_OBJECTS = t_auth-t_auth.$(OBJEXT)
 t_auth_OBJECTS = $(am_t_auth_OBJECTS)
-t_auth_DEPENDENCIES = libiperf.la
+t_auth_DEPENDENCIES = libiperf.la $(am__DEPENDENCIES_1)
 t_auth_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(t_auth_CFLAGS) $(CFLAGS) \
 	$(t_auth_LDFLAGS) $(LDFLAGS) -o $@
 am_t_timer_OBJECTS = t_timer-t_timer.$(OBJEXT)
 t_timer_OBJECTS = $(am_t_timer_OBJECTS)
-t_timer_DEPENDENCIES = libiperf.la
+t_timer_DEPENDENCIES = libiperf.la $(am__DEPENDENCIES_1)
 t_timer_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(t_timer_CFLAGS) \
 	$(CFLAGS) $(t_timer_LDFLAGS) $(LDFLAGS) -o $@
 am_t_units_OBJECTS = t_units-t_units.$(OBJEXT)
 t_units_OBJECTS = $(am_t_units_OBJECTS)
-t_units_DEPENDENCIES = libiperf.la
+t_units_DEPENDENCIES = libiperf.la $(am__DEPENDENCIES_1)
 t_units_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(t_units_CFLAGS) \
 	$(CFLAGS) $(t_units_LDFLAGS) $(LDFLAGS) -o $@
 am_t_uuid_OBJECTS = t_uuid-t_uuid.$(OBJEXT)
 t_uuid_OBJECTS = $(am_t_uuid_OBJECTS)
-t_uuid_DEPENDENCIES = libiperf.la
+t_uuid_DEPENDENCIES = libiperf.la $(am__DEPENDENCIES_1)
 t_uuid_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(t_uuid_CFLAGS) $(CFLAGS) \
 	$(t_uuid_LDFLAGS) $(LDFLAGS) -o $@
@@ -652,6 +657,8 @@ lib_LTLIBRARIES = libiperf.la                                   # Build and inst
 include_HEADERS = iperf_api.h                                   # Defines the headers that get installed with the program
 
 # Specify the source files and flags for the iperf library
+libiperf_la_LIBADD = $(LIBS)
+libiperf_la_LDFLAGS = -version-info 0:0:0
 libiperf_la_SOURCES = \
                         cjson.c \
                         cjson.h \
@@ -694,7 +701,7 @@ libiperf_la_SOURCES = \
 # Specify the sources and various flags for the iperf binary
 iperf3_SOURCES = main.c
 iperf3_CFLAGS = -g
-iperf3_LDADD = libiperf.la
+iperf3_LDADD = libiperf.la $(LIBS)
 iperf3_LDFLAGS = -g
 
 # If the iperf-profiled-binary is enabled
@@ -704,30 +711,30 @@ iperf3_LDFLAGS = -g
 @ENABLE_PROFILING_TRUE@                          $(libiperf_la_SOURCES)
 
 @ENABLE_PROFILING_TRUE@iperf3_profile_CFLAGS = -pg -g
-@ENABLE_PROFILING_TRUE@iperf3_profile_LDADD = libiperf.la
+@ENABLE_PROFILING_TRUE@iperf3_profile_LDADD = libiperf.la $(LIBS)
 @ENABLE_PROFILING_TRUE@iperf3_profile_LDFLAGS = -pg -g
 
 # Specify the sources and various flags for the test cases
 t_timer_SOURCES = t_timer.c
 t_timer_CFLAGS = -g
 t_timer_LDFLAGS = 
-t_timer_LDADD = libiperf.la
+t_timer_LDADD = libiperf.la $(LIBS)
 t_units_SOURCES = t_units.c
 t_units_CFLAGS = -g
 t_units_LDFLAGS = 
-t_units_LDADD = libiperf.la
+t_units_LDADD = libiperf.la $(LIBS)
 t_uuid_SOURCES = t_uuid.c
 t_uuid_CFLAGS = -g
 t_uuid_LDFLAGS = 
-t_uuid_LDADD = libiperf.la
+t_uuid_LDADD = libiperf.la $(LIBS)
 t_api_SOURCES = t_api.c
 t_api_CFLAGS = -g
 t_api_LDFLAGS = 
-t_api_LDADD = libiperf.la
+t_api_LDADD = libiperf.la $(LIBS)
 t_auth_SOURCES = t_auth.c
 t_auth_CFLAGS = -g
 t_auth_LDFLAGS = 
-t_auth_LDADD = libiperf.la
+t_auth_LDADD = libiperf.la $(LIBS)
 dist_man_MANS = iperf3.1 libiperf.3
 all: iperf_config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
@@ -863,7 +870,7 @@ clean-libLTLIBRARIES:
 	$(am__rm_f) $${locs}
 
 libiperf.la: $(libiperf_la_OBJECTS) $(libiperf_la_DEPENDENCIES) $(EXTRA_libiperf_la_DEPENDENCIES) 
-	$(AM_V_CCLD)$(LINK) -rpath $(libdir) $(libiperf_la_OBJECTS) $(libiperf_la_LIBADD) $(LIBS)
+	$(AM_V_CCLD)$(libiperf_la_LINK) -rpath $(libdir) $(libiperf_la_OBJECTS) $(libiperf_la_LIBADD) $(LIBS)
 
 iperf3$(EXEEXT): $(iperf3_OBJECTS) $(iperf3_DEPENDENCIES) $(EXTRA_iperf3_DEPENDENCIES) 
 	@rm -f iperf3$(EXEEXT)

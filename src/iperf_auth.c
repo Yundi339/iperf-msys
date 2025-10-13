@@ -32,8 +32,63 @@
 #include <sys/types.h>
 /* FreeBSD needs _WITH_GETLINE to enable the getline() declaration */
 #define _WITH_GETLINE
+/* MinGW needs _GNU_SOURCE for strndup and getline */
+#define _GNU_SOURCE
+/* Enable POSIX extensions */
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
+#include <stdlib.h>
+#ifdef HAVE_WINSOCK2_H
+// Windows doesn't have termios.h, terminal functions are not needed
+// MinGW may not have strndup and getline, provide implementations
+#ifndef strndup
+char* strndup(const char* s, size_t n) {
+    size_t len = 0;
+    while (len < n && s[len] != '\0') {
+        len++;
+    }
+    char* dup = malloc(len + 1);
+    if (dup) {
+        memcpy(dup, s, len);
+        dup[len] = '\0';
+    }
+    return dup;
+}
+#endif
+
+#ifndef getline
+ssize_t getline(char** lineptr, size_t* n, FILE* stream) {
+    if (!lineptr || !n || !stream) {
+        return -1;
+    }
+    
+    if (!*lineptr) {
+        *n = 128;
+        *lineptr = malloc(*n);
+        if (!*lineptr) return -1;
+    }
+    
+    size_t pos = 0;
+    int c;
+    while ((c = fgetc(stream)) != EOF) {
+        if (pos >= *n - 1) {
+            *n *= 2;
+            char* new_ptr = realloc(*lineptr, *n);
+            if (!new_ptr) return -1;
+            *lineptr = new_ptr;
+        }
+        (*lineptr)[pos++] = c;
+        if (c == '\n') break;
+    }
+    
+    if (pos == 0 && c == EOF) return -1;
+    (*lineptr)[pos] = '\0';
+    return pos;
+}
+#endif
+#else
 #include <termios.h>
+#endif
 #include <inttypes.h>
 #include <stdint.h>
 
@@ -429,6 +484,11 @@ int decode_auth_setting(int enable_debug, const char *authtoken, EVP_PKEY *priva
 #endif //HAVE_SSL
 
 ssize_t iperf_getpass (char **lineptr, size_t *n, FILE *stream) {
+#ifdef HAVE_WINSOCK2_H
+    // Windows implementation - simplified password input
+    printf("Password: ");
+    ssize_t nread = getline (lineptr, n, stream);
+#else
     struct termios old, new;
     ssize_t nread;
 
@@ -446,6 +506,7 @@ ssize_t iperf_getpass (char **lineptr, size_t *n, FILE *stream) {
 
     /* Restore terminal. */
     (void) tcsetattr (fileno (stream), TCSAFLUSH, &old);
+#endif
 
     //strip the \n or \r\n chars
     char *buf = *lineptr;

@@ -32,18 +32,6 @@
 #include <string.h>
 #include <getopt.h>
 #include <errno.h>
-#include <unistd.h>
-#include <assert.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <stdint.h>
-#include <sys/time.h>
-#include <sys/resource.h>
-#include <sched.h>
 #include <setjmp.h>
 #include <signal.h>
 
@@ -59,6 +47,31 @@
 #include "iperf_util.h"
 #include "iperf_locale.h"
 
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#include <process.h>
+#else
+#include <unistd.h>
+#include <assert.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#ifdef HAVE_WINSOCK2_H
+// Windows has netdb functions in ws2tcpip.h, no need for netdb.h
+#else
+#include <netdb.h>
+#endif
+#include <stdint.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sched.h>
+#endif
+
+
 #if defined(HAVE_TCP_CONGESTION)
 #if !defined(TCP_CA_NAME_MAX)
 #define TCP_CA_NAME_MAX 16
@@ -71,6 +84,10 @@ iperf_server_worker_run(void *s) {
     struct iperf_test *test = sp->test;
 
     /* Blocking signal to make sure that signal will be handled by main thread */
+#ifdef HAVE_WINSOCK2_H
+    // Windows doesn't have sigset_t and signal functions
+    // Signal handling is different in Windows
+#else
     sigset_t set;
     sigemptyset(&set);
 #ifdef SIGTERM
@@ -86,6 +103,7 @@ iperf_server_worker_run(void *s) {
 	    i_errno = IEPTHREADSIGMASK;
 	    goto cleanup_and_fail;
     }
+#endif
 
     /* Allow this thread to be cancelled even if it's in a syscall */
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);

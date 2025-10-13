@@ -38,6 +38,91 @@
 #include <getopt.h>
 #include <errno.h>
 #include <signal.h>
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#include <process.h>
+#include <windows.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+// Windows兼容的mmap实现
+#define PROT_READ 0x1
+#define PROT_WRITE 0x2
+#define MAP_PRIVATE 0x2
+#define MAP_FAILED ((void*)-1)
+
+void* mmap(void* addr, size_t len, int prot, int flags, int fd, off_t offset) {
+    HANDLE hFile = (HANDLE)_get_osfhandle(fd);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return MAP_FAILED;
+    }
+    
+    HANDLE hMap = CreateFileMappingA(hFile, NULL, PAGE_READWRITE, 0, len, NULL);
+    if (hMap == NULL) {
+        return MAP_FAILED;
+    }
+    
+    void* ptr = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, offset, len);
+    CloseHandle(hMap);
+    
+    return ptr ? ptr : MAP_FAILED;
+}
+
+// Windows兼容的文件操作定义
+#ifndef O_RDONLY
+#define O_RDONLY 0x0000
+#endif
+#ifndef O_WRONLY
+#define O_WRONLY 0x0001
+#endif
+#ifndef O_CREAT
+#define O_CREAT 0x0100
+#endif
+#ifndef O_TRUNC
+#define O_TRUNC 0x0200
+#endif
+#ifndef S_IRUSR
+#define S_IRUSR 0x0100
+#endif
+#ifndef S_IWUSR
+#define S_IWUSR 0x0080
+#endif
+// Windows兼容的信号定义
+#ifndef SIGPIPE
+#define SIGPIPE 13
+#endif
+#ifndef SIGHUP
+#define SIGHUP 1
+#endif
+// Windows兼容的函数定义
+int ftruncate(int fd, off_t length) {
+    return _chsize(fd, length);
+}
+#define kill(pid, sig) TerminateProcess(OpenProcess(PROCESS_TERMINATE, FALSE, pid), 0)
+
+int munmap(void* addr, size_t len) {
+    return UnmapViewOfFile(addr) ? 0 : -1;
+}
+
+// Windows兼容的strsignal实现
+char* strsignal(int sig) {
+    static char buffer[64];
+    switch (sig) {
+        case SIGPIPE:
+            return "SIGPIPE";
+        case SIGHUP:
+            return "SIGHUP";
+        case SIGINT:
+            return "SIGINT";
+        case SIGTERM:
+            return "SIGTERM";
+        default:
+            snprintf(buffer, sizeof(buffer), "Signal %d", sig);
+            return buffer;
+    }
+}
+#else
 #include <unistd.h>
 #include <assert.h>
 #include <fcntl.h>
@@ -45,13 +130,18 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#ifdef HAVE_WINSOCK2_H
+// Windows has netdb functions in ws2tcpip.h, no need for netdb.h
+#else
 #include <netdb.h>
+#endif
 #include <stdint.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sched.h>
+#endif
 #include <setjmp.h>
 #include <math.h>
 
@@ -4802,7 +4892,7 @@ iperf_common_sockopts(struct iperf_test *test, int s)
     if ((opt = test->settings->tos)) {
 	if (getsockdomain(s) == AF_INET6) {
 #ifdef IPV6_TCLASS
-	    if (setsockopt(s, IPPROTO_IPV6, IPV6_TCLASS, &opt, sizeof(opt)) < 0) {
+	    if (setsockopt(s, IPPROTO_IPV6, IPV6_TCLASS, (const char*)&opt, sizeof(opt)) < 0) {
                 i_errno = IESETCOS;
                 return -1;
             }
@@ -4810,7 +4900,7 @@ iperf_common_sockopts(struct iperf_test *test, int s)
 	    /* if the control connection was established with a mapped v4 address
 	       then set IP_TOS on v6 stream socket as well */
 	    if (iperf_get_mapped_v4(test)) {
-		if (setsockopt(s, IPPROTO_IP, IP_TOS, &opt, sizeof(opt)) < 0) {
+		if (setsockopt(s, IPPROTO_IP, IP_TOS, (const char*)&opt, sizeof(opt)) < 0) {
                     /* ignore any failure of v4 TOS in IPv6 case */
                 }
             }
@@ -4819,7 +4909,7 @@ iperf_common_sockopts(struct iperf_test *test, int s)
             return -1;
 #endif
         } else {
-            if (setsockopt(s, IPPROTO_IP, IP_TOS, &opt, sizeof(opt)) < 0) {
+            if (setsockopt(s, IPPROTO_IP, IP_TOS, (const char*)&opt, sizeof(opt)) < 0) {
                 i_errno = IESETTOS;
                 return -1;
             }
@@ -4832,9 +4922,8 @@ iperf_common_sockopts(struct iperf_test *test, int s)
 int
 iperf_init_stream(struct iperf_stream *sp, struct iperf_test *test)
 {
-    int opt;
+    int opt = 0;  // Initialize to avoid unused variable warning
     socklen_t len;
-
     len = sizeof(struct sockaddr_storage);
     if (getsockname(sp->socket, (struct sockaddr *) &sp->local_addr, &len) < 0) {
         i_errno = IEINITSTREAM;
@@ -4859,21 +4948,21 @@ iperf_init_stream(struct iperf_stream *sp, struct iperf_test *test)
          */
 #if defined(IP_MTU_DISCOVER) /* Linux version of IP_DONTFRAG */
         opt = IP_PMTUDISC_DO;
-        if (setsockopt(sp->socket, IPPROTO_IP, IP_MTU_DISCOVER, &opt, sizeof(opt)) < 0) {
+        if (setsockopt(sp->socket, IPPROTO_IP, IP_MTU_DISCOVER, (const char*)&opt, sizeof(opt)) < 0) {
             i_errno = IESETDONTFRAGMENT;
             return -1;
         }
 #else
 #if defined(IP_DONTFRAG) /* UNIX does IP_DONTFRAG */
         opt = 1;
-        if (setsockopt(sp->socket, IPPROTO_IP, IP_DONTFRAG, &opt, sizeof(opt)) < 0) {
+        if (setsockopt(sp->socket, IPPROTO_IP, IP_DONTFRAG, (const char*)&opt, sizeof(opt)) < 0) {
             i_errno = IESETDONTFRAGMENT;
             return -1;
         }
 #else
 #if defined(IP_DONTFRAGMENT) /* Windows does IP_DONTFRAGMENT */
         opt = 1;
-        if (setsockopt(sp->socket, IPPROTO_IP, IP_DONTFRAGMENT, &opt, sizeof(opt)) < 0) {
+        if (setsockopt(sp->socket, IPPROTO_IP, IP_DONTFRAGMENT, (const char*)&opt, sizeof(opt)) < 0) {
             i_errno = IESETDONTFRAGMENT;
             return -1;
         }

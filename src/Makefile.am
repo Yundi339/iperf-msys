@@ -9,6 +9,8 @@ include_HEADERS         = iperf_api.h                                   # Define
 
 
 # Specify the source files and flags for the iperf library
+libiperf_la_LIBADD      = $(LIBS)
+libiperf_la_LDFLAGS     = -version-info 0:0:0
 libiperf_la_SOURCES     = \
                         cjson.c \
                         cjson.h \
@@ -50,7 +52,7 @@ libiperf_la_SOURCES     = \
 # Specify the sources and various flags for the iperf binary
 iperf3_SOURCES          = main.c
 iperf3_CFLAGS           = -g
-iperf3_LDADD            = libiperf.la
+iperf3_LDADD            = libiperf.la $(LIBS)
 iperf3_LDFLAGS          = -g
 
 if ENABLE_PROFILING
@@ -61,7 +63,7 @@ iperf3_profile_SOURCES  = main.c \
                           $(libiperf_la_SOURCES)
 
 iperf3_profile_CFLAGS   = -pg -g
-iperf3_profile_LDADD    = libiperf.la
+iperf3_profile_LDADD    = libiperf.la $(LIBS)
 iperf3_profile_LDFLAGS  = -pg -g
 endif
 
@@ -69,27 +71,27 @@ endif
 t_timer_SOURCES         = t_timer.c
 t_timer_CFLAGS          = -g
 t_timer_LDFLAGS         =
-t_timer_LDADD           = libiperf.la
+t_timer_LDADD           = libiperf.la $(LIBS)
 
 t_units_SOURCES         = t_units.c
 t_units_CFLAGS          = -g
 t_units_LDFLAGS         =
-t_units_LDADD           = libiperf.la
+t_units_LDADD           = libiperf.la $(LIBS)
 
 t_uuid_SOURCES          = t_uuid.c
 t_uuid_CFLAGS           = -g
 t_uuid_LDFLAGS          =
-t_uuid_LDADD            = libiperf.la
+t_uuid_LDADD            = libiperf.la $(LIBS)
 
 t_api_SOURCES           = t_api.c
 t_api_CFLAGS            = -g
 t_api_LDFLAGS           =
-t_api_LDADD             = libiperf.la
+t_api_LDADD             = libiperf.la $(LIBS)
 
 t_auth_SOURCES           = t_auth.c
 t_auth_CFLAGS            = -g
 t_auth_LDFLAGS           =
-t_auth_LDADD             = libiperf.la
+t_auth_LDADD             = libiperf.la $(LIBS)
 
 
 

@@ -26,12 +26,16 @@
  */
 #include <stdio.h>
 #include <errno.h>
-#include <netdb.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include "iperf.h"
 #include "iperf_api.h"
+#ifdef HAVE_WINSOCK2_H
+// Windows has netdb functions in ws2tcpip.h, no need for netdb.h
+#else
+#include <netdb.h>
+#endif
 
 int gerror;
 

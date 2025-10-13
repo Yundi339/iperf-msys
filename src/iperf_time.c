@@ -62,7 +62,118 @@ iperf_time_now_wallclock(struct iperf_time *now)
 
 #else
 
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <windows.h>
+// Windows兼容的gettimeofday实现
+struct timeval {
+    long tv_sec;
+    long tv_usec;
+};
+
+int gettimeofday(struct timeval *tv, void *tz) {
+    FILETIME ft;
+    ULARGE_INTEGER uli;
+    static const unsigned __int64 epoch = 116444736000000000ULL;
+    
+    GetSystemTimeAsFileTime(&ft);
+    uli.LowPart = ft.dwLowDateTime;
+    uli.HighPart = ft.dwHighDateTime;
+    
+    tv->tv_sec = (long)((uli.QuadPart - epoch) / 10000000L);
+    tv->tv_usec = (long)((uli.QuadPart - epoch) % 10000000L / 10);
+    
+    return 0;
+}
+
+// Windows兼容的clock_gettime实现
+struct timespec {
+    long tv_sec;
+    long tv_nsec;
+};
+
+#define CLOCK_REALTIME 0
+#define CLOCK_MONOTONIC 1
+
+int clock_gettime(clockid_t clk_id, struct timespec *tp) {
+    if (tp == NULL) return -1;
+    
+    if (clk_id == CLOCK_REALTIME) {
+        FILETIME ft;
+        ULARGE_INTEGER uli;
+        static const unsigned __int64 epoch = 116444736000000000ULL;
+        
+        GetSystemTimeAsFileTime(&ft);
+        uli.LowPart = ft.dwLowDateTime;
+        uli.HighPart = ft.dwHighDateTime;
+        
+        tp->tv_sec = (long)((uli.QuadPart - epoch) / 10000000L);
+        tp->tv_nsec = (long)((uli.QuadPart - epoch) % 10000000L * 100);
+    } else if (clk_id == CLOCK_MONOTONIC) {
+        LARGE_INTEGER frequency, counter;
+        QueryPerformanceFrequency(&frequency);
+        QueryPerformanceCounter(&counter);
+        
+        tp->tv_sec = (long)(counter.QuadPart / frequency.QuadPart);
+        tp->tv_nsec = (long)((counter.QuadPart % frequency.QuadPart) * 1000000000LL / frequency.QuadPart);
+    } else {
+        return -1;
+    }
+    
+    return 0;
+}
+
+// Windows兼容的nanosleep实现
+int nanosleep(const struct timespec *req, struct timespec *rem) {
+    if (req == NULL) return -1;
+    
+    DWORD milliseconds = (DWORD)(req->tv_sec * 1000 + req->tv_nsec / 1000000);
+    Sleep(milliseconds);
+    
+    if (rem != NULL) {
+        rem->tv_sec = 0;
+        rem->tv_nsec = 0;
+    }
+    
+    return 0;
+}
+
+// Windows兼容的clock_nanosleep实现
+int clock_nanosleep(clockid_t clk_id, int flags, const struct timespec *req, struct timespec *rem) {
+    if (req == NULL) return -1;
+    
+    if (flags == 0) {
+        // 相对时间
+        return nanosleep(req, rem);
+    } else {
+        // 绝对时间 - 简化实现
+        struct timespec now;
+        if (clock_gettime(clk_id, &now) != 0) return -1;
+        
+        long diff_sec = req->tv_sec - now.tv_sec;
+        long diff_nsec = req->tv_nsec - now.tv_nsec;
+        
+        if (diff_nsec < 0) {
+            diff_sec--;
+            diff_nsec += 1000000000L;
+        }
+        
+        if (diff_sec < 0) {
+            // 时间已过
+            if (rem != NULL) {
+                rem->tv_sec = 0;
+                rem->tv_nsec = 0;
+            }
+            return 0;
+        }
+        
+        struct timespec sleep_time = {diff_sec, diff_nsec};
+        return nanosleep(&sleep_time, rem);
+    }
+}
+#else
 #include <sys/time.h>
+#endif
 
 int
 iperf_time_now_wallclock(struct iperf_time *now)

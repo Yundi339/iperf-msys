@@ -27,8 +27,13 @@
 #ifndef        __IPERF_API_H
 #define        __IPERF_API_H
 
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
 #include <sys/time.h>
+#endif
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -45,7 +50,11 @@ extern "C" { /* open extern "C" */
 #include <stdatomic.h>
 #else
 #warning "No <stdatomic.h> available"
+#ifdef HAVE_WINSOCK2_H
+typedef uint64_t atomic_uint_fast64_t;
+#else
 typedef u_int64_t atomic_uint_fast64_t;
+#endif
 #endif // HAVE_STDATOMIC_H
 
 struct iperf_test;

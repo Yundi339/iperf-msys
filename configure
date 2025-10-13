@@ -5934,7 +5934,7 @@ else case e in #(
     lt_cv_sys_max_cmd_len=-1;
     ;;
 
-  cygwin* | mingw* | windows* | cegcc*)
+  cygwin* | msys* | mingw* | windows* | cegcc*)
     # On Win9x/ME, this test blows up -- it succeeds, but takes
     # about 5 minutes as the teststring grows exponentially.
     # Worse, since 9x/ME are not pre-emptively multitasking,
@@ -6102,7 +6102,7 @@ else case e in #(
       *-*-mingw* | *-*-windows* ) # actually msys
         lt_cv_to_host_file_cmd=func_convert_file_msys_to_w32
         ;;
-      *-*-cygwin* )
+      *-*-cygwin* | *-*-msys* )
         lt_cv_to_host_file_cmd=func_convert_file_cygwin_to_w32
         ;;
       * ) # otherwise, assume *nix
@@ -6110,12 +6110,12 @@ else case e in #(
         ;;
     esac
     ;;
-  *-*-cygwin* )
+  *-*-cygwin* | *-*-msys* )
     case $build in
       *-*-mingw* | *-*-windows* ) # actually msys
         lt_cv_to_host_file_cmd=func_convert_file_msys_to_cygwin
         ;;
-      *-*-cygwin* )
+      *-*-cygwin* | *-*-msys* )
         lt_cv_to_host_file_cmd=func_convert_file_noop
         ;;
       * ) # otherwise, assume *nix
@@ -6186,7 +6186,7 @@ case $reload_flag in
 esac
 reload_cmds='$LD$reload_flag -o $output$reload_objs'
 case $host_os in
-  cygwin* | mingw* | windows* | pw32* | cegcc*)
+  cygwin* | msys* | mingw* | windows* | pw32* | cegcc*)
     if test yes != "$GCC"; then
       reload_cmds=false
     fi
@@ -6406,7 +6406,7 @@ bsdi[45]*)
   lt_cv_file_magic_test_file=/shlib/libc.so
   ;;
 
-cygwin*)
+cygwin* | msys*)
   # func_win32_libid is a shell function defined in ltmain.sh
   lt_cv_deplibs_check_method='file_magic ^x86 archive import|^x86 DLL'
   lt_cv_file_magic_cmd='func_win32_libid'
@@ -6421,7 +6421,7 @@ mingw* | windows* | pw32*)
     lt_cv_file_magic_cmd='func_win32_libid'
   else
     # Keep this pattern in sync with the one in func_win32_libid.
-    lt_cv_deplibs_check_method='file_magic file format (pei*-i386(.*architecture: i386)?|pe-arm-wince|pe-x86-64|pe-aarch64)'
+    lt_cv_deplibs_check_method='file_magic file format (pei*-i386(.*architecture: i386)?|pe-arm-wince|pe-x86-64|pe-aarch64|coff-arm|coff-arm64|coff-i386|coff-x86-64)'
     lt_cv_file_magic_cmd='$OBJDUMP -f'
   fi
   ;;
@@ -6747,7 +6747,7 @@ else case e in #(
   e) lt_cv_sharedlib_from_linklib_cmd='unknown'
 
 case $host_os in
-cygwin* | mingw* | windows* | pw32* | cegcc*)
+cygwin* | msys* | mingw* | windows* | pw32* | cegcc*)
   # two different shell functions defined in ltmain.sh;
   # decide which one to use based on capabilities of $DLLTOOL
   case `$DLLTOOL --help 2>&1` in
@@ -7291,7 +7291,7 @@ case $host_os in
 aix*)
   symcode='[BCDT]'
   ;;
-cygwin* | mingw* | windows* | pw32* | cegcc*)
+cygwin* | msys* | mingw* | windows* | pw32* | cegcc*)
   symcode='[ABCDGISTW]'
   ;;
 hpux*)
@@ -9600,7 +9600,7 @@ lt_prog_compiler_static=
       # PIC is the default for these OSes.
       ;;
 
-    mingw* | windows* | cygwin* | pw32* | os2* | cegcc*)
+    mingw* | windows* | cygwin* | msys* | pw32* | os2* | cegcc*)
       # This hack is so that the source file can tell whether it is being
       # built for inclusion in a dll (and should export symbols for example).
       # Although the cygwin gcc ignores -fPIC, still need this for old-style
@@ -9703,7 +9703,7 @@ lt_prog_compiler_static=
       esac
       ;;
 
-    mingw* | windows* | cygwin* | pw32* | os2* | cegcc*)
+    mingw* | windows* | cygwin* | msys* | pw32* | os2* | cegcc*)
       # This hack is so that the source file can tell whether it is being
       # built for inclusion in a dll (and should export symbols for example).
       lt_prog_compiler_pic='-DDLL_EXPORT'
@@ -10230,7 +10230,7 @@ printf %s "checking whether the $compiler linker ($LD) supports shared libraries
   extract_expsyms_cmds=
 
   case $host_os in
-  cygwin* | mingw* | windows* | pw32* | cegcc*)
+  cygwin* | msys* | mingw* | windows* | pw32* | cegcc*)
     # FIXME: the MSVC++ and ICC port hasn't been tested in a loooong time
     # When not using gcc, we currently assume that we are using
     # Microsoft Visual C++ or Intel C++ Compiler.
@@ -10342,7 +10342,7 @@ _LT_EOF
       fi
       ;;
 
-    cygwin* | mingw* | windows* | pw32* | cegcc*)
+    cygwin* | msys* | mingw* | windows* | pw32* | cegcc*)
       # _LT_TAGVAR(hardcode_libdir_flag_spec, ) is actually meaningless,
       # as there is no search path for DLLs.
       hardcode_libdir_flag_spec='-L$libdir'
@@ -10896,7 +10896,7 @@ fi
       export_dynamic_flag_spec=-rdynamic
       ;;
 
-    cygwin* | mingw* | windows* | pw32* | cegcc*)
+    cygwin* | msys* | mingw* | windows* | pw32* | cegcc*)
       # When not using gcc, we currently assume that we are using
       # Microsoft Visual C++ or Intel C++ Compiler.
       # hardcode_libdir_flag_spec is actually meaningless, as there is
@@ -11947,7 +11947,7 @@ bsdi[45]*)
   # libtool to hard-code these into programs
   ;;
 
-cygwin* | mingw* | windows* | pw32* | cegcc*)
+cygwin* | msys* | mingw* | windows* | pw32* | cegcc*)
   version_type=windows
   shrext_cmds=.dll
   need_version=no
@@ -11987,9 +11987,9 @@ cygwin* | mingw* | windows* | pw32* | cegcc*)
     shlibpath_overrides_runpath=yes
 
     case $host_os in
-    cygwin*)
-      # Cygwin DLLs use 'cyg' prefix rather than 'lib'
-      soname_spec='`echo $libname | $SED -e 's/^lib/cyg/'``echo $release | $SED -e 's/[.]/-/g'`$versuffix$shared_ext'
+    cygwin* | msys*)
+      # MSYS DLLs use 'msys-' prefix rather than 'lib'
+      soname_spec='`echo $libname | $SED -e 's/^lib/msys-/'``echo $release | $SED -e 's/[.]/-/g'`$versuffix$shared_ext'
 
       sys_lib_search_path_spec="$sys_lib_search_path_spec /usr/lib/w32api"
       ;;
@@ -12027,7 +12027,7 @@ cygwin* | mingw* | windows* | pw32* | cegcc*)
       # Convert to MSYS style.
       sys_lib_search_path_spec=`$ECHO "$sys_lib_search_path_spec" | $SED -e 's|\\\\|/|g' -e 's| \\([a-zA-Z]\\):| /\\1|g' -e 's|^ ||'`
       ;;
-    cygwin*)
+    cygwin* | msys*)
       # Convert to unix form, then to dos form, then back to unix form
       # but this time dos style (no spaces!) so that the unix form looks
       # like /cygdrive/c/PROGRA~1:/cygdr...
@@ -12648,7 +12648,7 @@ lt_prog_compiler_static=
       # PIC is the default for these OSes.
       ;;
 
-    mingw* | windows* | cygwin* | pw32* | os2* | cegcc*)
+    mingw* | windows* | cygwin* | msys* | pw32* | os2* | cegcc*)
       # This hack is so that the source file can tell whether it is being
       # built for inclusion in a dll (and should export symbols for example).
       # Although the cygwin gcc ignores -fPIC, still need this for old-style
@@ -12751,7 +12751,7 @@ lt_prog_compiler_static=
       esac
       ;;
 
-    mingw* | windows* | cygwin* | pw32* | os2* | cegcc*)
+    mingw* | windows* | cygwin* | msys* | pw32* | os2* | cegcc*)
       # This hack is so that the source file can tell whether it is being
       # built for inclusion in a dll (and should export symbols for example).
       lt_prog_compiler_pic='-DDLL_EXPORT'
@@ -13281,7 +13281,7 @@ else
     lt_cv_dlopen_libs=
     ;;
 
-  cygwin*)
+  cygwin* | msys*)
     lt_cv_dlopen=dlopen
     lt_cv_dlopen_libs=
     ;;
@@ -14966,6 +14966,14 @@ if test "x$GCC" = "xyes"; then
   CFLAGS="$CFLAGS -Wall"
 fi
 
+# Add MinGW-specific flags
+case $host in
+   *-*-mingw*)
+     CFLAGS="$CFLAGS -D_WIN32_WINNT=0x0601"
+     CXXFLAGS="$CXXFLAGS -D_WIN32_WINNT=0x0601"
+     ;;
+esac
+
 # Check if enable profiling
 # Check whether --enable-profiling was given.
 if test ${enable_profiling+y}
@@ -15057,8 +15065,69 @@ esac
 fi
 
 
-# On illumos we need -lsocket
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing socket" >&5
+# On illumos we need -lsocket, on Windows we need -lws2_32
+case $host in
+   *-*-mingw*)
+     # For MinGW, we need to manually check for ws2_32
+     { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for socket in -lws2_32" >&5
+printf %s "checking for socket in -lws2_32... " >&6; }
+if test ${ac_cv_lib_ws2_32_socket+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_check_lib_save_LIBS=$LIBS
+LIBS="-lws2_32  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char socket (void);
+int
+main (void)
+{
+return socket ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_lib_ws2_32_socket=yes
+else case e in #(
+  e) ac_cv_lib_ws2_32_socket=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_ws2_32_socket" >&5
+printf "%s\n" "$ac_cv_lib_ws2_32_socket" >&6; }
+if test "x$ac_cv_lib_ws2_32_socket" = xyes
+then :
+
+       LIBS="-lws2_32 $LIBS"
+
+else case e in #(
+  e)
+       echo "socket() not found in ws2_32"
+       exit 1
+      ;;
+esac
+fi
+
+     ;;
+   *)
+     { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing socket" >&5
 printf %s "checking for library containing socket... " >&6; }
 if test ${ac_cv_search_socket+y}
 then :
@@ -15125,15 +15194,22 @@ then :
 
 else case e in #(
   e)
-echo "socket()"
-exit 1
- ;;
+       echo "socket()"
+       exit 1
+      ;;
 esac
 fi
 
+     ;;
+esac
 
-# On illumos inet_ntop in in -lnsl
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing inet_ntop" >&5
+# On illumos inet_ntop in in -lnsl, on Windows it's in ws2_32
+case $host in
+   *-*-mingw*)
+     # inet_ntop is already in ws2_32, no need to search again
+     ;;
+   *)
+     { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing inet_ntop" >&5
 printf %s "checking for library containing inet_ntop... " >&6; }
 if test ${ac_cv_search_inet_ntop+y}
 then :
@@ -15200,8 +15276,84 @@ then :
 
 else case e in #(
   e)
-echo "inet_ntop()"
-exit 1
+       echo "inet_ntop()"
+       exit 1
+      ;;
+esac
+fi
+
+     ;;
+esac
+
+# On Windows, check for winsock2 library
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing WSAStartup" >&5
+printf %s "checking for library containing WSAStartup... " >&6; }
+if test ${ac_cv_search_WSAStartup+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char WSAStartup (void);
+int
+main (void)
+{
+return WSAStartup ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' ws2_32
+do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_search_WSAStartup=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext
+  if test ${ac_cv_search_WSAStartup+y}
+then :
+  break
+fi
+done
+if test ${ac_cv_search_WSAStartup+y}
+then :
+
+else case e in #(
+  e) ac_cv_search_WSAStartup=no ;;
+esac
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_WSAStartup" >&5
+printf "%s\n" "$ac_cv_search_WSAStartup" >&6; }
+ac_res=$ac_cv_search_WSAStartup
+if test "$ac_res" != no
+then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+else case e in #(
+  e)
+echo "WSAStartup() not found"
  ;;
 esac
 fi
@@ -16407,6 +16559,10 @@ esac
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam \
     conftest$ac_exeext conftest.$ac_ext
+else case e in #(
+  e)
+ ;;
+esac
 fi
 
 done
@@ -16452,6 +16608,19 @@ ac_fn_c_check_header_compile "$LINENO" "linux/tcp.h" "ac_cv_header_linux_tcp_h" 
 if test "x$ac_cv_header_linux_tcp_h" = xyes
 then :
   printf "%s\n" "#define HAVE_LINUX_TCP_H 1" >>confdefs.h
+
+fi
+
+ac_fn_c_check_header_compile "$LINENO" "winsock2.h" "ac_cv_header_winsock2_h" "$ac_includes_default"
+if test "x$ac_cv_header_winsock2_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_WINSOCK2_H 1" >>confdefs.h
+
+fi
+ac_fn_c_check_header_compile "$LINENO" "ws2tcpip.h" "ac_cv_header_ws2tcpip_h" "$ac_includes_default"
+if test "x$ac_cv_header_ws2tcpip_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_WS2TCPIP_H 1" >>confdefs.h
 
 fi
 
@@ -16881,6 +17050,9 @@ rm -f core conftest.err conftest.$ac_objext conftest.beam \
     if $have_ssl; then
         case $host in
            *-*-cygwin)
+             CFLAGS="$CFLAGS -DNOCRYPT"
+             ;;
+           *-*-mingw*)
              CFLAGS="$CFLAGS -DNOCRYPT"
              ;;
         esac

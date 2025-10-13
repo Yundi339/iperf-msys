@@ -47,14 +47,28 @@
 #include <stdlib.h>
 #include <sys/param.h>
 #include <sys/types.h>
+#include "iperf.h"
+#include "iperf_api.h"
+#include "iperf_locale.h"
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+// Windows兼容的strerror实现
+char* strerror(int errnum) {
+    static char buffer[256];
+    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                   NULL, errnum, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                   buffer, sizeof(buffer), NULL);
+    return buffer;
+}
+#else
 #include <sys/socket.h>
 #include <string.h>
 #include <netinet/in.h>
 #include <errno.h>
+#endif
 
-#include "iperf.h"
-#include "iperf_api.h"
-#include "iperf_locale.h"
 
 /*************************************************************/
 int

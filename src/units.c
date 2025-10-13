@@ -55,12 +55,15 @@
 #include <assert.h>
 #include <ctype.h>
 #include <stdint.h>
+#include "iperf.h"
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/time.h>
-
-
-#include "iperf.h"
+#endif
 
 #ifdef __cplusplus
 extern    "C"
@@ -275,7 +278,7 @@ extern    "C"
 	{
 	    inNum *= 8;
 	}
-	switch    (toupper((u_char)inFormat))
+	switch    (toupper((unsigned char)inFormat))
 	{
 	case 'B':
 	    conv = UNIT_CONV;

@@ -30,19 +30,34 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <sys/time.h>
-#include <sys/select.h>
-#include <limits.h>
 
 #include "iperf.h"
 #include "iperf_api.h"
 #include "iperf_sctp.h"
 #include "net.h"
+
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#ifdef HAVE_WINSOCK2_H
+// Windows has netdb functions in ws2tcpip.h, no need for netdb.h
+#else
+#include <netdb.h>
+#endif
+#include <sys/time.h>
+#ifdef HAVE_WINSOCK2_H
+// Windows has select in winsock2.h, no need for sys/select.h
+#else
+#include <sys/select.h>
+#endif
+#include <limits.h>
+#endif
+
 
 
 

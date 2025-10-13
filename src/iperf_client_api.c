@@ -29,14 +29,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/select.h>
-#include <sys/uio.h>
-#include <arpa/inet.h>
-#include <signal.h>
 
 #include "iperf.h"
 #include "iperf_api.h"
@@ -45,6 +37,20 @@
 #include "iperf_time.h"
 #include "net.h"
 #include "timer.h"
+
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+// Windows has select in winsock2.h, no need for sys/select.h
+#else
+#include <unistd.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <sys/uio.h>
+#include <arpa/inet.h>
+#endif
 
 #if defined(HAVE_TCP_CONGESTION)
 #if !defined(TCP_CA_NAME_MAX)
@@ -58,6 +64,10 @@ iperf_client_worker_run(void *s) {
     struct iperf_test *test = sp->test;
 
     /* Blocking signal to make sure that signal will be handled by main thread */
+#ifdef HAVE_WINSOCK2_H
+    // Windows doesn't have sigset_t and signal functions
+    // Signal handling is different in Windows
+#else
     sigset_t set;
     sigemptyset(&set);
 #ifdef SIGTERM
@@ -66,6 +76,10 @@ iperf_client_worker_run(void *s) {
 #ifdef SIGHUP
     sigaddset(&set, SIGHUP);
 #endif
+#endif
+#ifdef HAVE_WINSOCK2_H
+    // Windows doesn't have pthread_sigmask
+#else
 #ifdef SIGINT
     sigaddset(&set, SIGINT);
 #endif
@@ -73,6 +87,7 @@ iperf_client_worker_run(void *s) {
 	    i_errno = IEPTHREADSIGMASK;
 	    goto cleanup_and_fail;
     }
+#endif
 
     /* Allow this thread to be cancelled even if it's in a syscall */
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
@@ -317,7 +332,7 @@ iperf_handle_message_client(struct iperf_test *test)
     }
 
     /*!!! Why is this read() and not Nread()? */
-    if ((rval = read(test->ctrl_sck, (char*) &test->state, sizeof(signed char))) <= 0) {
+    if ((rval = Nread(test->ctrl_sck, (char*) &test->state, sizeof(signed char), test->protocol->id)) <= 0) {
         if (rval == 0) {
             i_errno = IECTRLCLOSE;
             return -1;
@@ -468,7 +483,7 @@ iperf_connect(struct iperf_test *test)
     if (test->ctrl_sck > test->max_fd) test->max_fd = test->ctrl_sck;
 
     len = sizeof(opt);
-    if (getsockopt(test->ctrl_sck, IPPROTO_TCP, TCP_MAXSEG, &opt, &len) < 0) {
+    if (getsockopt(test->ctrl_sck, IPPROTO_TCP, TCP_MAXSEG, (char*)&opt, &len) < 0) {
         test->ctrl_sck_mss = 0;
     }
     else {

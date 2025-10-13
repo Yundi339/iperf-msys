@@ -26,7 +26,16 @@
  */
 #include "iperf_config.h"
 
+#include "iperf.h"
+#include "iperf_util.h"
+#include "net.h"
+#include "timer.h"
 #include <stdio.h>
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#else
 #include <unistd.h>
 #include <errno.h>
 #include <arpa/inet.h>
@@ -34,10 +43,15 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <assert.h>
+#ifdef HAVE_WINSOCK2_H
+// Windows has netdb functions in ws2tcpip.h, no need for netdb.h
+#else
 #include <netdb.h>
+#endif
 #include <string.h>
 #include <fcntl.h>
 #include <limits.h>
+#endif
 
 #ifdef HAVE_SENDFILE
 #ifdef linux
@@ -59,11 +73,6 @@
 #ifdef HAVE_POLL_H
 #include <poll.h>
 #endif /* HAVE_POLL_H */
-
-#include "iperf.h"
-#include "iperf_util.h"
-#include "net.h"
-#include "timer.h"
 
 static int nread_read_timeout = 10;
 static int nread_overall_timeout = 30;
@@ -90,12 +99,33 @@ timeout_connect(int s, const struct sockaddr *name, socklen_t namelen,
 
 	flags = 0;
 	if (timeout != -1) {
+#ifdef HAVE_WINSOCK2_H
+		// Windows uses ioctlsocket for non-blocking mode
+		u_long mode = 1;
+		if (ioctlsocket(s, FIONBIO, &mode) != 0)
+			return -1;
+#else
 		flags = fcntl(s, F_GETFL, 0);
 		if (fcntl(s, F_SETFL, flags | O_NONBLOCK) == -1)
 			return -1;
+#endif
 	}
 
 	if ((ret = connect(s, name, namelen)) != 0 && errno == EINPROGRESS) {
+#ifdef HAVE_WINSOCK2_H
+		// Windows uses select instead of poll
+		fd_set writefds;
+		struct timeval tv;
+		FD_ZERO(&writefds);
+		FD_SET(s, &writefds);
+		tv.tv_sec = timeout / 1000;
+		tv.tv_usec = (timeout % 1000) * 1000;
+		if ((ret = select(0, NULL, &writefds, NULL, &tv)) == 1) {
+			optlen = sizeof(optval);
+			if ((ret = getsockopt(s, SOL_SOCKET, SO_ERROR,
+			    (char*)&optval, &optlen)) == 0) {
+				errno = optval;
+#else
 		pfd.fd = s;
 		pfd.events = POLLOUT;
 		if ((ret = poll(&pfd, 1, timeout)) == 1) {
@@ -103,6 +133,7 @@ timeout_connect(int s, const struct sockaddr *name, socklen_t namelen,
 			if ((ret = getsockopt(s, SOL_SOCKET, SO_ERROR,
 			    &optval, &optlen)) == 0) {
 				errno = optval;
+#endif
 				ret = optval == 0 ? 0 : -1;
 			}
 		} else if (ret == 0) {
@@ -112,8 +143,16 @@ timeout_connect(int s, const struct sockaddr *name, socklen_t namelen,
 			ret = -1;
 	}
 
-	if (timeout != -1 && fcntl(s, F_SETFL, flags) == -1)
-		ret = -1;
+	if (timeout != -1) {
+#ifdef HAVE_WINSOCK2_H
+		// Windows: restore blocking mode
+		u_long mode = 0;
+		ioctlsocket(s, FIONBIO, &mode);
+#else
+		if (fcntl(s, F_SETFL, flags) == -1)
+			ret = -1;
+#endif
+	}
 
 	return (ret);
 }
@@ -426,7 +465,11 @@ Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt)
         } else if (r == 0)
             break;
 
+#ifdef MSG_TRUNC
 	if (sock_opt & MSG_TRUNC) {
+#else
+	if (0) { // MSG_TRUNC not available on this platform
+#endif
             size_t bytes_copied = (r > nleft)? nleft: r;
             nleft -= bytes_copied;
             buf += bytes_copied;
@@ -505,7 +548,11 @@ Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt)
         } else if (r == 0)
             break;
 
+#ifdef MSG_TRUNC
 	if (sock_opt & MSG_TRUNC) {
+#else
+	if (0) { // MSG_TRUNC not available on this platform
+#endif
             size_t bytes_copied = (r > nleft)? nleft: r;
             nleft -= bytes_copied;
             buf += bytes_copied;
@@ -643,6 +690,15 @@ Nsendfile(int fromfd, int tofd, const char *buf, size_t count)
 int
 setnonblocking(int fd, int nonblocking)
 {
+#ifdef HAVE_WINSOCK2_H
+    // Windows uses ioctlsocket for non-blocking mode
+    u_long mode = nonblocking ? 1 : 0;
+    if (ioctlsocket(fd, FIONBIO, &mode) != 0) {
+        perror("ioctlsocket(FIONBIO)");
+        return -1;
+    }
+    return 0;
+#else
     int flags, newflags;
 
     flags = fcntl(fd, F_GETFL, 0);
@@ -660,6 +716,7 @@ setnonblocking(int fd, int nonblocking)
 	    return -1;
 	}
     return 0;
+#endif
 }
 
 /****************************************************************************/

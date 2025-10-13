@@ -24,12 +24,15 @@
  * This code is distributed under a BSD style license, see the LICENSE
  * file for complete information.
  */
+#include "iperf_util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#else
 #include <sys/time.h>
-
-#include "iperf_util.h"
+#endif
 
 int
 main(int argc, char **argv)

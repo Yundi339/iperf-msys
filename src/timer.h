@@ -31,7 +31,11 @@
 #define __TIMER_H
 
 #include <time.h>
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#else
 #include <sys/time.h>
+#endif
 
 #include "iperf_time.h"
 
