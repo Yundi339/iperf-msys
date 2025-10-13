@@ -308,6 +308,10 @@ For questions about the original iperf3 license, contact Berkeley Lab's Technolo
 
 For questions about this UCRT adaptation, please use the GitHub issues at [https://github.com/Yundi339/iperf-msys](https://github.com/Yundi339/iperf-msys).
 
+### 🌟 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Yundi339/iperf-msys&type=Date)](https://www.star-history.com/#Yundi339/iperf-msys&Date)
+
 ---
 
 **iperf3-msys2 - Windows UCRT Network Performance Testing Tool**
