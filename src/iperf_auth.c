@@ -73,6 +73,7 @@ char* strndup(const char* s, size_t n) {
 #if OPENSSL_VERSION_MAJOR >= 3
 #include <openssl/evp.h>
 #include <openssl/core_names.h>
+#include <openssl/provider.h>
 #endif
 
 const char *auth_text_format = "user: %s\npwd:  %s\nts:   %"PRId64;
@@ -286,11 +287,45 @@ int encrypt_rsa_message(const char *plaintext, EVP_PKEY *public_key, unsigned ch
         padding = RSA_PKCS1_PADDING;
     }
 #if OPENSSL_VERSION_MAJOR >= 3
+    // For OpenSSL 3.x, use EVP interface with legacy provider
+    // Load legacy provider first
+    OSSL_PROVIDER *legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
+    if (legacy_provider == NULL) {
+        EVP_PKEY_CTX_free(ctx);
+        goto errreturn;
+    }
+    
     EVP_PKEY_encrypt_init(ctx);
     EVP_PKEY_CTX_set_rsa_padding(ctx, padding);
 
-    EVP_PKEY_encrypt(ctx, *encryptedtext, &encryptedtext_len, rsa_buffer, rsa_buffer_len);
+    // First call to get the required buffer size
+    encryptedtext_len = 0;
+    int ret = EVP_PKEY_encrypt(ctx, NULL, &encryptedtext_len, rsa_buffer, rsa_buffer_len);
+    if (ret <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        OSSL_PROVIDER_unload(legacy_provider);
+        goto errreturn;
+    }
+    
+    // Reallocate buffer with correct size
+    OPENSSL_free(*encryptedtext);
+    *encryptedtext = (unsigned char*)OPENSSL_malloc(encryptedtext_len);
+    if (*encryptedtext == NULL) {
+        EVP_PKEY_CTX_free(ctx);
+        OSSL_PROVIDER_unload(legacy_provider);
+        goto errreturn;
+    }
+    
+    // Second call to perform the actual encryption
+    ret = EVP_PKEY_encrypt(ctx, *encryptedtext, &encryptedtext_len, rsa_buffer, rsa_buffer_len);
+    if (ret <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        OSSL_PROVIDER_unload(legacy_provider);
+        goto errreturn;
+    }
+    
     EVP_PKEY_CTX_free(ctx);
+    OSSL_PROVIDER_unload(legacy_provider);
 #else
     encryptedtext_len = RSA_public_encrypt(rsa_buffer_len, rsa_buffer, *encryptedtext, rsa, padding);
     RSA_free(rsa);
@@ -345,16 +380,49 @@ int decrypt_rsa_message(const unsigned char *encryptedtext, const int encryptedt
         padding = RSA_PKCS1_PADDING;
     }
 #if OPENSSL_VERSION_MAJOR >= 3
-
-    plaintext_len = keysize;
+    // For OpenSSL 3.x, use EVP interface with legacy provider
+    // Load legacy provider first
+    OSSL_PROVIDER *legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
+    if (legacy_provider == NULL) {
+        EVP_PKEY_CTX_free(ctx);
+        goto errreturn;
+    }
+    
     EVP_PKEY_decrypt_init(ctx);
 
     ret = EVP_PKEY_CTX_set_rsa_padding(ctx, padding);
     if (ret < 0){
+        OSSL_PROVIDER_unload(legacy_provider);
         goto errreturn;
     }
+    
+    // First call to determine the required buffer size
+    plaintext_len = 0;
+    ret = EVP_PKEY_decrypt(ctx, NULL, &plaintext_len, rsa_buffer, rsa_buffer_len);
+    if (ret <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        OSSL_PROVIDER_unload(legacy_provider);
+        goto errreturn;
+    }
+    
+    // Allocate buffer with the determined size
+    OPENSSL_free(*plaintext);
+    *plaintext = (unsigned char*)OPENSSL_malloc(plaintext_len + 1);
+    if (*plaintext == NULL) {
+        EVP_PKEY_CTX_free(ctx);
+        OSSL_PROVIDER_unload(legacy_provider);
+        goto errreturn;
+    }
+    
+    // Second call to perform the actual decryption
     ret = EVP_PKEY_decrypt(ctx, *plaintext, &plaintext_len, rsa_buffer, rsa_buffer_len);
+    if (ret <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        OSSL_PROVIDER_unload(legacy_provider);
+        goto errreturn;
+    }
     EVP_PKEY_CTX_free(ctx);
+    OSSL_PROVIDER_unload(legacy_provider);
 #else
     plaintext_len = RSA_private_decrypt(rsa_buffer_len, rsa_buffer, *plaintext, rsa, padding);
     RSA_free(rsa);
