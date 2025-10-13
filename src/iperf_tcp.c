@@ -168,7 +168,11 @@ iperf_tcp_accept(struct iperf_test * test)
 
     if (Nread(s, cookie, COOKIE_SIZE, Ptcp) < 0) {
         i_errno = IERECVCOOKIE;
+#ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
         close(s);
+#endif
         return -1;
     }
 
@@ -176,7 +180,11 @@ iperf_tcp_accept(struct iperf_test * test)
         if (Nwrite(s, (char*) &rbuf, sizeof(rbuf), Ptcp) < 0) {
             iperf_err(test, "failed to send access denied from busy server to new connecting client, errno = %d\n", errno);
         }
+#ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
         close(s);
+#endif
     }
 
     return s;
@@ -212,7 +220,11 @@ iperf_tcp_listen(struct iperf_test *test)
 	int proto = 0;
 
         FD_CLR(s, &test->read_set);
+#ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
         close(s);
+#endif
 
         snprintf(portstr, 6, "%d", test->server_port);
         memset(&hints, 0, sizeof(hints));
@@ -297,7 +309,11 @@ iperf_tcp_listen(struct iperf_test *test)
         opt = 1;
         if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt)) < 0) {
 	    saved_errno = errno;
-            close(s);
+    #ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
+        close(s);
+#endif
 	    freeaddrinfo(res);
 	    errno = saved_errno;
             i_errno = IEREUSEADDR;
@@ -329,7 +345,11 @@ iperf_tcp_listen(struct iperf_test *test)
 
         if (bind(s, (struct sockaddr *) res->ai_addr, res->ai_addrlen) < 0) {
 	    saved_errno = errno;
-            close(s);
+    #ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
+        close(s);
+#endif
 	    freeaddrinfo(res);
 	    errno = saved_errno;
             i_errno = IESTREAMLISTEN;
@@ -340,7 +360,11 @@ iperf_tcp_listen(struct iperf_test *test)
 
         if (listen(s, INT_MAX) < 0) {
             i_errno = IESTREAMLISTEN;
-            close(s);
+    #ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
+        close(s);
+#endif
             return -1;
         }
 
@@ -488,7 +512,11 @@ iperf_tcp_connect(struct iperf_test *test)
 	printf("SNDBUF is %u, expecting %u\n", sndbuf_actual, test->settings->socket_bufsize);
     }
     if (test->settings->socket_bufsize && test->settings->socket_bufsize > sndbuf_actual) {
+#ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
         close(s);
+#endif
         freeaddrinfo(server_res);
 	i_errno = IESETBUF2;
 	return -1;
@@ -508,7 +536,11 @@ iperf_tcp_connect(struct iperf_test *test)
 	printf("RCVBUF is %u, expecting %u\n", rcvbuf_actual, test->settings->socket_bufsize);
     }
     if (test->settings->socket_bufsize && test->settings->socket_bufsize > rcvbuf_actual) {
+#ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
         close(s);
+#endif
         freeaddrinfo(server_res);
 	i_errno = IESETBUF2;
 	return -1;
@@ -555,7 +587,11 @@ iperf_tcp_connect(struct iperf_test *test)
 
             if (setsockopt(s, IPPROTO_IPV6, IPV6_FLOWLABEL_MGR, freq, freq_len) < 0) {
 		saved_errno = errno;
-                close(s);
+        #ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
+        close(s);
+#endif
                 freeaddrinfo(server_res);
 		errno = saved_errno;
                 i_errno = IESETFLOW;
@@ -566,7 +602,11 @@ iperf_tcp_connect(struct iperf_test *test)
             opt = 1;
             if (setsockopt(s, IPPROTO_IPV6, IPV6_FLOWINFO_SEND, (const char*)&opt, sizeof(opt)) < 0) {
 		saved_errno = errno;
-                close(s);
+        #ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
+        close(s);
+#endif
                 freeaddrinfo(server_res);
 		errno = saved_errno;
                 i_errno = IESETFLOW;

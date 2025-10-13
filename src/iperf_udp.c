@@ -480,7 +480,8 @@ iperf_udp_accept(struct iperf_test *test)
 
     /* Let the client know we're ready "accept" another UDP "stream" */
     buf = UDP_CONNECT_REPLY;
-    if (write(s, &buf, sizeof(buf)) < 0) {
+    /* For UDP, use sendto instead of write to avoid Windows socket issues */
+    if (sendto(s, (const char*)&buf, sizeof(buf), 0, (struct sockaddr *)&sa_peer, len) < 0) {
         i_errno = IESTREAMWRITE;
         return -1;
     }

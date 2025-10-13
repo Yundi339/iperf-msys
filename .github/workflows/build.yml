@@ -31,7 +31,6 @@ jobs:
         sudo apt-get -y update && sudo apt-get install -y build-essential
     - name: build
       run: |
-<<<<<<< HEAD
         set -e
         
         # 设置环境变量
@@ -65,10 +64,6 @@ jobs:
         # 测试iperf3服务器
         timeout 300 src/iperf3.exe -s &
         sleep 5
-=======
-        ./configure && make && make check
-        timeout 300 src/iperf3 -s &
->>>>>>> parent of 8168547 (feature: 添加msys2CI)
         ./test_commands.sh localhost
   build-test-macos-ish:
     strategy:

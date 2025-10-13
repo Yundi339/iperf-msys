@@ -57,11 +57,9 @@ typedef unsigned int uid_t;
 #ifndef gid_t
 typedef unsigned int gid_t;
 #endif
-// Windows already has closesocket, no need to redefine close
-// For file descriptors, use _close in Windows
+// Windows socket handling
 #ifdef HAVE_WINSOCK2_H
 #include <io.h>
-#define close _close
 #endif
 // 错误码映射 - 只在未定义时定义
 #ifndef EAGAIN

@@ -96,6 +96,19 @@ main(int argc, char **argv)
 {
     struct iperf_test *test;
 
+#ifdef HAVE_WINSOCK2_H
+    // Initialize Winsock
+    WSADATA wsaData;
+    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (result != 0) {
+        fprintf(stderr, "WSAStartup failed: %d\n", result);
+        return 1;
+    }
+    // Register cleanup function to be called on exit
+    // Note: atexit functions are called in LIFO order
+    atexit((void(*)(void))WSACleanup);
+#endif
+
     /*
      * Atomics check. We prefer to have atomic types (which is
      * basically on any compiler supporting C11 or better). If we

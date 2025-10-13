@@ -44,6 +44,7 @@
 #include <ws2tcpip.h>
 #include <io.h>
 #include <windows.h>
+#include <wincrypt.h>
 // Windows兼容的getrusage实现
 struct rusage {
     struct timeval ru_utime;
@@ -174,6 +175,19 @@ int daemon(int nochdir, int noclose) {
  */
 int readentropy(void *out, size_t outsize)
 {
+#ifdef HAVE_WINSOCK2_H
+    // Windows: use CryptGenRandom for entropy
+    HCRYPTPROV hCryptProv = 0;
+    if (!CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
+        iperf_errexit(NULL, "error - failed to acquire crypto context: %ld\n", (long)GetLastError());
+    }
+    if (!CryptGenRandom(hCryptProv, outsize, (BYTE*)out)) {
+        CryptReleaseContext(hCryptProv, 0);
+        iperf_errexit(NULL, "error - failed to generate random data: %ld\n", (long)GetLastError());
+    }
+    CryptReleaseContext(hCryptProv, 0);
+    return 0;
+#else
     static FILE *frandom;
     static const char rndfile[] = "/dev/urandom";
 
@@ -193,6 +207,7 @@ int readentropy(void *out, size_t outsize)
                       feof(frandom) ? "EOF" : strerror(errno));
     }
     return 0;
+#endif
 }
 
 
@@ -349,7 +364,7 @@ get_system_info(void)
     memset(buf, 0, 1024);
     uname(&uts);
 
-    snprintf(buf, sizeof(buf), "%s %s %s %s %s", uts.sysname, uts.nodename,
+    snprintf(buf, sizeof(buf), "%s %s %s %s %s (MSYS2)", uts.sysname, uts.nodename,
 	     uts.release, uts.version, uts.machine);
 
     return buf;

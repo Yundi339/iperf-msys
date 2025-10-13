@@ -120,7 +120,7 @@ timeout_connect(int s, const struct sockaddr *name, socklen_t namelen,
 		FD_SET(s, &writefds);
 		tv.tv_sec = timeout / 1000;
 		tv.tv_usec = (timeout % 1000) * 1000;
-		if ((ret = select(0, NULL, &writefds, NULL, &tv)) == 1) {
+		if ((ret = select(1, NULL, &writefds, NULL, &tv)) == 1) {
 			optlen = sizeof(optval);
 			if ((ret = getsockopt(s, SOL_SOCKET, SO_ERROR,
 			    (char*)&optval, &optlen)) == 0) {
@@ -202,7 +202,15 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 #endif // HAVE_SO_BINDTODEVICE
         {
             saved_errno = errno;
-            close(s);
+#ifdef HAVE_WINSOCK2_H
+            closesocket(s);
+#else
+    #ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
+        close(s);
+#endif
+#endif
             freeaddrinfo(local_res);
             freeaddrinfo(server_res);
             errno = saved_errno;
@@ -220,7 +228,11 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 
         if (bind(s, (struct sockaddr *) local_res->ai_addr, local_res->ai_addrlen) < 0) {
 	    saved_errno = errno;
+#ifdef HAVE_WINSOCK2_H
+	    closesocket(s);
+#else
 	    close(s);
+#endif
 	    freeaddrinfo(local_res);
 	    freeaddrinfo(server_res);
 	    errno = saved_errno;
@@ -251,7 +263,11 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 	}
 	/* Unknown protocol */
 	else {
+#ifdef HAVE_WINSOCK2_H
+	    closesocket(s);
+#else
 	    close(s);
+#endif
 	    freeaddrinfo(server_res);
 	    errno = EAFNOSUPPORT;
             return -1;
@@ -259,7 +275,11 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 
         if (bind(s, (struct sockaddr *) &lcl, addrlen) < 0) {
 	    saved_errno = errno;
+#ifdef HAVE_WINSOCK2_H
+	    closesocket(s);
+#else
 	    close(s);
+#endif
 	    freeaddrinfo(server_res);
 	    errno = saved_errno;
             return -1;
@@ -284,7 +304,11 @@ netdial(int domain, int proto, const char *local, const char *bind_dev, int loca
 
     if (timeout_connect(s, (struct sockaddr *) server_res->ai_addr, server_res->ai_addrlen, timeout) < 0 && errno != EINPROGRESS) {
 	saved_errno = errno;
+#ifdef HAVE_WINSOCK2_H
+	closesocket(s);
+#else
 	close(s);
+#endif
 	freeaddrinfo(server_res);
 	errno = saved_errno;
         return -1;
@@ -341,7 +365,15 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 #endif // HAVE_SO_BINDTODEVICE
         {
             saved_errno = errno;
-            close(s);
+#ifdef HAVE_WINSOCK2_H
+            closesocket(s);
+#else
+    #ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
+        close(s);
+#endif
+#endif
             freeaddrinfo(res);
             errno = saved_errno;
             return -1;
@@ -352,11 +384,25 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
     if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR,
 		   (char *) &opt, sizeof(opt)) < 0) {
 	saved_errno = errno;
+#ifdef HAVE_WINSOCK2_H
+	closesocket(s);
+#else
 	close(s);
+#endif
 	freeaddrinfo(res);
 	errno = saved_errno;
 	return -1;
     }
+
+#ifdef HAVE_WINSOCK2_H
+    // Windows特定：设置SO_EXCLUSIVEADDRUSE为0，允许端口重用
+    opt = 0;
+    if (setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+		   (char *) &opt, sizeof(opt)) < 0) {
+	// 如果SO_EXCLUSIVEADDRUSE不支持，继续执行
+	// 这在某些Windows版本上可能不支持
+    }
+#endif
     /*
      * If we got an IPv6 socket, figure out if it should accept IPv4
      * connections as well.  We do that if and only if no address
@@ -374,7 +420,11 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 	if (setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY,
 		       (char *) &opt, sizeof(opt)) < 0) {
 	    saved_errno = errno;
+#ifdef HAVE_WINSOCK2_H
+	    closesocket(s);
+#else
 	    close(s);
+#endif
 	    freeaddrinfo(res);
 	    errno = saved_errno;
 	    return -1;
@@ -384,7 +434,11 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 
     if (bind(s, (struct sockaddr *) res->ai_addr, res->ai_addrlen) < 0) {
         saved_errno = errno;
+#ifdef HAVE_WINSOCK2_H
+        closesocket(s);
+#else
         close(s);
+#endif
 	freeaddrinfo(res);
         errno = saved_errno;
         return -1;
@@ -395,7 +449,11 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
     if (proto == SOCK_STREAM) {
         if (listen(s, INT_MAX) < 0) {
 	    saved_errno = errno;
+#ifdef HAVE_WINSOCK2_H
+	    closesocket(s);
+#else
 	    close(s);
+#endif
 	    errno = saved_errno;
             return -1;
         }
@@ -454,7 +512,11 @@ Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt)
         if (sock_opt)
             r = recv(fd, buf, nleft, sock_opt);
         else
+#ifdef HAVE_WINSOCK2_H
+            r = recv(fd, buf, nleft, 0); // Windows: use recv for sockets
+#else
             r = read(fd, buf, nleft);
+#endif
 
         if (r < 0) {
             /* XXX EWOULDBLOCK can't happen without non-blocking sockets */
@@ -537,7 +599,11 @@ Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt)
         if (sock_opt)
             r = recv(fd, buf, nleft, sock_opt);
         else
+#ifdef HAVE_WINSOCK2_H
+            r = recv(fd, buf, nleft, 0); // Windows: use recv for sockets
+#else
             r = read(fd, buf, nleft);
+#endif
 
         if (r < 0) {
             /* XXX EWOULDBLOCK can't happen without non-blocking sockets */
@@ -579,7 +645,11 @@ Nwrite(int fd, const char *buf, size_t count, int prot)
     register size_t nleft = count;
 
     while (nleft > 0) {
+#ifdef HAVE_WINSOCK2_H
+	r = send(fd, buf, nleft, 0); // Windows: use send for sockets
+#else
 	r = write(fd, buf, nleft);
+#endif
 	if (r < 0) {
 	    switch (errno) {
 		case EINTR:

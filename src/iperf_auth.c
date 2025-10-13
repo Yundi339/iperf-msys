@@ -26,6 +26,7 @@
  */
 
 #include "iperf_config.h"
+#include "iperf_util.h"
 
 #include <string.h>
 #include <time.h>
@@ -53,37 +54,6 @@ char* strndup(const char* s, size_t n) {
         dup[len] = '\0';
     }
     return dup;
-}
-#endif
-
-#ifndef getline
-ssize_t getline(char** lineptr, size_t* n, FILE* stream) {
-    if (!lineptr || !n || !stream) {
-        return -1;
-    }
-    
-    if (!*lineptr) {
-        *n = 128;
-        *lineptr = malloc(*n);
-        if (!*lineptr) return -1;
-    }
-    
-    size_t pos = 0;
-    int c;
-    while ((c = fgetc(stream)) != EOF) {
-        if (pos >= *n - 1) {
-            *n *= 2;
-            char* new_ptr = realloc(*lineptr, *n);
-            if (!new_ptr) return -1;
-            *lineptr = new_ptr;
-        }
-        (*lineptr)[pos++] = c;
-        if (c == '\n') break;
-    }
-    
-    if (pos == 0 && c == EOF) return -1;
-    (*lineptr)[pos] = '\0';
-    return pos;
 }
 #endif
 #else

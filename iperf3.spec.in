@@ -1,12 +1,12 @@
-Name:	iperf3
+Name:	iperf3-msys2
 Version: @VERSION@
 Release:	1%{?dist}
-Summary: Measurement tool for TCP/UDP bandwidth performance
+Summary: Measurement tool for TCP/UDP bandwidth performance (MSYS2 version)
 
 Group:	 Applications/Internet
 License: BSD
-URL:	 https://github.com/esnet/iperf
-Source0: https://downloads.es.net/pub/iperf/iperf-%{version}.tar.gz
+URL:	 https://github.com/Yundi339/iperf-msys
+Source0: https://github.com/Yundi339/iperf-msys/archive/%{version}.tar.gz
 BuildRoot:	%(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 BuildRequires: autoconf
@@ -14,10 +14,12 @@ BuildRequires: gcc
 BuildRequires: openssl-devel
 
 %description
-iperf3 is a tool for active measurements of the maximum achievable
-bandwidth between two IP hosts.  It supports tuning of various
-parameters related to timing, protocols, and buffers.  For each test,
-it reports the throughput, loss, and other parameters.
+iperf3-msys2 is a MSYS2-optimized version of iperf3, a tool for active 
+measurements of the maximum achievable bandwidth between two IP hosts.  
+It supports tuning of various parameters related to timing, protocols, 
+and buffers.  For each test, it reports the throughput, loss, and other 
+parameters. This version includes enhanced stability and improved error 
+handling for Windows environments.
 
 %package        devel
 Summary:        Development files for %{name}

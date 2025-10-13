@@ -255,7 +255,7 @@ const char usage_longstr[] = "Usage: iperf3 [-s|-c host] [options]\n"
   "-y, --reportstyle C      report as a Comma-Separated Values\n"
 #endif
 
-const char version[] = PACKAGE_STRING;
+const char version[] = PACKAGE_STRING " (MSYS2)";
 
 /* -------------------------------------------------------------------
  * settings

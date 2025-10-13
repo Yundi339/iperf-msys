@@ -52,6 +52,16 @@
 #define MAP_PRIVATE 0x2
 #define MAP_FAILED ((void*)-1)
 
+// 存储映射句柄的结构
+typedef struct {
+    void* addr;
+    HANDLE hMap;
+} MmapHandle;
+
+#define MAX_MMAP_HANDLES 1024
+static MmapHandle mmap_handles[MAX_MMAP_HANDLES];
+static int mmap_handle_count = 0;
+
 void* mmap(void* addr, size_t len, int prot, int flags, int fd, off_t offset) {
     HANDLE hFile = (HANDLE)_get_osfhandle(fd);
     if (hFile == INVALID_HANDLE_VALUE) {
@@ -64,9 +74,19 @@ void* mmap(void* addr, size_t len, int prot, int flags, int fd, off_t offset) {
     }
     
     void* ptr = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, offset, len);
-    CloseHandle(hMap);
+    if (ptr == NULL) {
+        CloseHandle(hMap);
+        return MAP_FAILED;
+    }
     
-    return ptr ? ptr : MAP_FAILED;
+    // 保存映射句柄以便稍后释放
+    if (mmap_handle_count < MAX_MMAP_HANDLES) {
+        mmap_handles[mmap_handle_count].addr = ptr;
+        mmap_handles[mmap_handle_count].hMap = hMap;
+        mmap_handle_count++;
+    }
+    
+    return ptr;
 }
 
 // Windows兼容的文件操作定义
@@ -102,6 +122,20 @@ int ftruncate(int fd, off_t length) {
 #define kill(pid, sig) TerminateProcess(OpenProcess(PROCESS_TERMINATE, FALSE, pid), 0)
 
 int munmap(void* addr, size_t len) {
+    // 查找并关闭对应的映射句柄
+    for (int i = 0; i < mmap_handle_count; i++) {
+        if (mmap_handles[i].addr == addr) {
+            UnmapViewOfFile(addr);
+            CloseHandle(mmap_handles[i].hMap);
+            // 移除这个句柄
+            for (int j = i; j < mmap_handle_count - 1; j++) {
+                mmap_handles[j] = mmap_handles[j + 1];
+            }
+            mmap_handle_count--;
+            return 0;
+        }
+    }
+    // 如果找不到句柄，仍然尝试取消映射
     return UnmapViewOfFile(addr) ? 0 : -1;
 }
 
@@ -2225,6 +2259,11 @@ iperf_send_mt(struct iperf_stream *sp)
 #endif /* HAVE_CLOCK_NANOSLEEP, HAVE_NANOSLEEP */
 
     for (message_sent = 0; sp->green_light && multisend > 0; --multisend) {
+        // Check if stream is marked as done or socket is invalid
+        if (sp->done || sp->socket < 0) {
+            break; // Gracefully exit if stream is being cleaned up
+        }
+        
         // XXX If we hit one of these ending conditions maybe
         // want to stop even trying to send something?
         if (multisend > 1 && test->settings->bytes != 0 && test->bytes_sent >= test->settings->bytes)
@@ -2234,6 +2273,10 @@ iperf_send_mt(struct iperf_stream *sp)
         if ((r = sp->snd(sp)) < 0) {
             if (r == NET_SOFTERROR)
                 break;
+            // Check if this is due to socket being closed during cleanup
+            if (sp->done || sp->socket < 0) {
+                break; // Gracefully exit if stream is being cleaned up
+            }
             i_errno = IESTREAMWRITE;
             return r;
         }
@@ -2265,18 +2308,27 @@ iperf_recv_mt(struct iperf_stream *sp)
     int r;
     struct iperf_test *test = sp->test;
 
-	    if ((r = sp->rcv(sp)) < 0) {
-		i_errno = IESTREAMREAD;
-		return r;
-	    }
+    // Check if stream is marked as done or socket is invalid
+    if (sp->done || sp->socket < 0) {
+        return 0; // Gracefully exit if stream is being cleaned up
+    }
+
+    if ((r = sp->rcv(sp)) < 0) {
+        // Check if this is due to socket being closed during cleanup
+        if (sp->done || sp->socket < 0) {
+            return 0; // Gracefully exit if stream is being cleaned up
+        }
+        i_errno = IESTREAMREAD;
+        return r;
+    }
             
-            /* Collect statistics only if receive did not timeout (e.g. `Nread()` may timeout).
-             * This is also important for `--rcv-timeout` to work properly.
-             */
-            if (r > 0) {
-	        test->bytes_received += r;
-	        ++test->blocks_received;
-            }
+    /* Collect statistics only if receive did not timeout (e.g. `Nread()` may timeout).
+     * This is also important for `--rcv-timeout` to work properly.
+     */
+    if (r > 0) {
+        test->bytes_received += r;
+        ++test->blocks_received;
+    }
 
     return 0;
 }
@@ -4821,12 +4873,17 @@ iperf_new_stream(struct iperf_test *test, int s, int sender)
         free(sp);
         return NULL;
     }
+#ifdef HAVE_WINSOCK2_H
+    // In Windows, we don't need to unlink the temp file immediately
+    // The file will be cleaned up when the process exits
+#else
     if (unlink(template) < 0) {
         i_errno = IECREATESTREAM;
         free(sp->result);
         free(sp);
         return NULL;
     }
+#endif
     if (ftruncate(sp->buffer_fd, test->settings->blksize) < 0) {
         i_errno = IECREATESTREAM;
         free(sp->result);
@@ -5230,9 +5287,15 @@ int
 iperf_delete_pidfile(struct iperf_test *test)
 {
     if (test->pidfile) {
+#ifdef HAVE_WINSOCK2_H
+	if (DeleteFileA(test->pidfile) == 0) { // Windows: use DeleteFileA instead of _unlink
+	    return -1;
+	}
+#else
 	if (unlink(test->pidfile) < 0) {
 	    return -1;
 	}
+#endif
     }
     return 0;
 }

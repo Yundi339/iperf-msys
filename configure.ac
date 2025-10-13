@@ -25,7 +25,7 @@
 
 # Initialize the autoconf system for the specified tool, version and mailing list
 AC_PREREQ([2.71])
-AC_INIT([iperf],[3.19.1+],[https://github.com/esnet/iperf],[iperf],[https://software.es.net/iperf/])
+AC_INIT([iperf-msys2],[3.19.1+],[https://github.com/Yundi339/iperf-msys],[iperf-msys2],[https://github.com/Yundi339/iperf-msys])
 m4_include([config/ax_check_openssl.m4])
 m4_include([config/ax_pthread.m4])
 m4_include([config/iperf_config_static_bin.m4])
@@ -111,6 +111,15 @@ esac
 AC_SEARCH_LIBS(WSAStartup, [ws2_32], [], [
 echo "WSAStartup() not found"
 ])
+
+# On Windows, check for advapi32 library for CryptGenRandom
+case $host in
+    *-*-mingw*)
+        AC_SEARCH_LIBS(CryptGenRandom, [advapi32], [], [
+            echo "CryptGenRandom() not found"
+        ])
+        ;;
+esac
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
