@@ -88,15 +88,13 @@ jobs:
           which automake || (echo "automake not found" && exit 1)
           which libtool || (echo "libtool not found" && exit 1)
           echo "All build tools verified successfully"
-          
+
           echo "=== OpenSSL 诊断信息 ==="
           echo "OpenSSL版本: $(openssl version)"
           echo "OpenSSL路径: $(which openssl)"
           echo "库路径检查:"
           find /ucrt64 -name "*ssl*" -o -name "*crypto*" | head -10
-          echo "环境变量:"
-          echo "  PATH: $PATH"
-          echo "  LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-未设置}"
+
 
       - name: Build Windows UCRT
         shell: msys2 {0}
@@ -137,14 +135,7 @@ jobs:
           fi
           
           # 配置构建 - 静态编译
-          echo "=== 运行 configure ==="
-          echo "configure 参数:"
-          echo "  --prefix=/ucrt64"
-          echo "  --host=x86_64-w64-mingw32"
-          echo "  --build=x86_64-w64-mingw32"
-          echo "  --disable-shared"
-          echo "  --enable-static"
-          echo "  --with-openssl=/ucrt64"
+
           echo "开始运行 configure..."
           ./configure \
             --prefix=/ucrt64 \
