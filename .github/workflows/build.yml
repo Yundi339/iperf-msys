@@ -122,6 +122,7 @@ jobs:
           
           # 编译
           make -j$(nproc)
+          ldd src/t_auth.exe
           
           # 运行测试
           make check
