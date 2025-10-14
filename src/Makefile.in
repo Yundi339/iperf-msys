@@ -1973,16 +1973,12 @@ uninstall-man: uninstall-man1 uninstall-man3
 
 .PRECIOUS: Makefile
 
-
-# 修改测试目标，使用包装器
 check-local:
-	@echo "=== 使用增强的测试包装器运行测试 ==="
 	@chmod +x test_wrapper.sh
 	@for test in $(TESTS); do \
-		echo "运行测试: $$test"; \
+		echo "test: $$test"; \
 		./test_wrapper.sh $$test || exit 1; \
 	done
-	@echo "=== 所有测试完成 ==="
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
