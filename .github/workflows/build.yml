@@ -116,7 +116,8 @@ jobs:
           export CXX="g++"
           
           # 生成configure脚本
-          ./bootstrap.sh
+          echo "=== 运行 bootstrap.sh ==="
+          ./bootstrap.sh || (echo "bootstrap.sh 失败" && exit 1)
           
           # OpenSSL 配置检查
           echo "=== OpenSSL 配置检查 ==="
@@ -124,7 +125,14 @@ jobs:
           pkg-config --cflags openssl
           pkg-config --libs openssl
           
+          # 检查configure脚本是否存在
+          if [ ! -f "./configure" ]; then
+            echo "错误: configure脚本未生成"
+            exit 1
+          fi
+          
           # 配置构建 - 静态编译
+          echo "=== 运行 configure ==="
           ./configure \
             --prefix=/ucrt64 \
             --host=x86_64-w64-mingw32 \
@@ -137,17 +145,19 @@ jobs:
             CXXFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
             LDFLAGS="-static -L/ucrt64/lib -Wl,--enable-auto-import -Wl,--enable-runtime-pseudo-reloc" \
             LIBS="-lssl -lcrypto -lpthread -lws2_32 -lcrypt32" \
-            PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig"
+            PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig" || (echo "configure 失败" && exit 1)
           
           # 编译
-          make -j$(nproc)
+          echo "=== 开始编译 ==="
+          make -j$(nproc) || (echo "编译失败" && exit 1)
           
           # 设置测试环境
           export LD_LIBRARY_PATH="/ucrt64/lib:$LD_LIBRARY_PATH"
           export PATH="/ucrt64/bin:$PATH"
           
           # 运行测试
-          make check
+          echo "=== 开始测试 ==="
+          make check || (echo "测试失败" && exit 1)
 
       - name: Package Windows UCRT
         shell: msys2 {0}
