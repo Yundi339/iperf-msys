@@ -79,23 +79,6 @@ jobs:
             libtool
             pkg-config
 
-      - name: Verify Build Tools
-        shell: msys2 {0}
-        run: |
-          echo "Verifying build tools are installed..."
-          which gcc || (echo "gcc not found" && exit 1)
-          which autoconf || (echo "autoconf not found" && exit 1)
-          which automake || (echo "automake not found" && exit 1)
-          which libtool || (echo "libtool not found" && exit 1)
-          echo "All build tools verified successfully"
-
-          echo "=== OpenSSL 诊断信息 ==="
-          echo "OpenSSL版本: $(openssl version)"
-          echo "OpenSSL路径: $(which openssl)"
-          echo "库路径检查:"
-          find /ucrt64 -name "*ssl*" -o -name "*crypto*" | head -10
-
-
       - name: Build Windows UCRT
         shell: msys2 {0}
         env:
