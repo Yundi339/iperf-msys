@@ -79,14 +79,22 @@ jobs:
             libtool
             pkg-config
 
+      - name: Verify Build Tools
+        shell: msys2 {0}
+        run: |
+          echo "Verifying build tools are installed..."
+          which gcc || (echo "gcc not found" && exit 1)
+          which autoconf || (echo "autoconf not found" && exit 1)
+          which automake || (echo "automake not found" && exit 1)
+          which libtool || (echo "libtool not found" && exit 1)
+          echo "All build tools verified successfully"
+
       - name: Build Windows UCRT
         shell: msys2 {0}
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
           BUILD_VERSION: ${{ needs.setup_release.outputs.release_tag }}
           COMMIT: ${{ needs.setup_release.outputs.release_commit }}
-          LD_LIBRARY_PATH: "/ucrt64/lib"
-          PKG_CONFIG_PATH: "/ucrt64/lib/pkgconfig"
         run: |
           set -e
           
@@ -97,55 +105,26 @@ jobs:
           export CXX="g++"
           
           # 生成configure脚本
-          echo "=== 运行 bootstrap.sh ==="
-          echo "当前目录: $(pwd)"
-          echo "文件列表:"
-          ls -la
-          echo "开始运行 bootstrap.sh..."
-          ./bootstrap.sh 2>&1 || (echo "bootstrap.sh 失败，退出码: $?" && exit 1)
-          echo "bootstrap.sh 完成"
-          
-          # OpenSSL 配置检查
-          echo "=== OpenSSL 配置检查 ==="
-          pkg-config --exists openssl && echo "OpenSSL pkg-config 可用" || echo "OpenSSL pkg-config 不可用"
-          pkg-config --cflags openssl
-          pkg-config --libs openssl
-          
-          # 检查configure脚本是否存在
-          if [ ! -f "./configure" ]; then
-            echo "错误: configure脚本未生成"
-            exit 1
-          fi
+          ./bootstrap.sh
           
           # 配置构建 - 静态编译
-
-          echo "开始运行 configure..."
           ./configure \
             --prefix=/ucrt64 \
             --host=x86_64-w64-mingw32 \
             --build=x86_64-w64-mingw32 \
             --disable-shared \
             --enable-static \
-            --with-openssl=/ucrt64 \
-            CPPFLAGS="-I/ucrt64/include" \
             CFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
             CXXFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
-            LDFLAGS="-static -L/ucrt64/lib -Wl,--enable-auto-import -Wl,--enable-runtime-pseudo-reloc" \
-            LIBS="-lssl -lcrypto -lpthread -lws2_32 -lcrypt32 -lz -lbcrypt" \
-            PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig" 2>&1 || (echo "configure 失败，退出码: $?" && exit 1)
-          echo "configure 完成"
+            LDFLAGS="-static -Wl,--enable-auto-import -Wl,--enable-runtime-pseudo-reloc" \
+            LIBS="-lssl -lcrypto -lpthread -lws2_32 -lcrypt32" \
+            PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig"
           
           # 编译
-          echo "=== 开始编译 ==="
-          make -j$(nproc) || (echo "编译失败" && exit 1)
-          
-          # 设置测试环境
-          export LD_LIBRARY_PATH="/ucrt64/lib:$LD_LIBRARY_PATH"
-          export PATH="/ucrt64/bin:$PATH"
+          make -j$(nproc)
           
           # 运行测试
-          echo "=== 开始测试 ==="
-          make check || (echo "测试失败" && exit 1)
+          make check
 
       - name: Package Windows UCRT
         shell: msys2 {0}
