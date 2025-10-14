@@ -117,7 +117,12 @@ jobs:
           
           # 生成configure脚本
           echo "=== 运行 bootstrap.sh ==="
-          ./bootstrap.sh || (echo "bootstrap.sh 失败" && exit 1)
+          echo "当前目录: $(pwd)"
+          echo "文件列表:"
+          ls -la
+          echo "开始运行 bootstrap.sh..."
+          ./bootstrap.sh 2>&1 || (echo "bootstrap.sh 失败，退出码: $?" && exit 1)
+          echo "bootstrap.sh 完成"
           
           # OpenSSL 配置检查
           echo "=== OpenSSL 配置检查 ==="
@@ -133,6 +138,14 @@ jobs:
           
           # 配置构建 - 静态编译
           echo "=== 运行 configure ==="
+          echo "configure 参数:"
+          echo "  --prefix=/ucrt64"
+          echo "  --host=x86_64-w64-mingw32"
+          echo "  --build=x86_64-w64-mingw32"
+          echo "  --disable-shared"
+          echo "  --enable-static"
+          echo "  --with-openssl=/ucrt64"
+          echo "开始运行 configure..."
           ./configure \
             --prefix=/ucrt64 \
             --host=x86_64-w64-mingw32 \
@@ -144,8 +157,9 @@ jobs:
             CFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
             CXXFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
             LDFLAGS="-static -L/ucrt64/lib -Wl,--enable-auto-import -Wl,--enable-runtime-pseudo-reloc" \
-            LIBS="-lssl -lcrypto -lpthread -lws2_32 -lcrypt32" \
-            PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig" || (echo "configure 失败" && exit 1)
+            LIBS="-lssl -lcrypto -lpthread -lws2_32 -lcrypt32 -lz -lbcrypt" \
+            PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig" 2>&1 || (echo "configure 失败，退出码: $?" && exit 1)
+          echo "configure 完成"
           
           # 编译
           echo "=== 开始编译 ==="
