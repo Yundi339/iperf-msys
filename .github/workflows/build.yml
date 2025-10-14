@@ -123,6 +123,7 @@ jobs:
           # 编译
           mingw32-make -j$(nproc)
           ldd src/t_auth.exe
+          ldd legacy.so
           
           # 运行测试
           mingw32-make check
