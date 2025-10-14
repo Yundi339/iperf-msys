@@ -108,12 +108,58 @@ AM_TESTS_ENVIRONMENT = \
     export VERBOSE=1; \
     export TEST_DEBUG=1;
 
-# 添加调试测试目标
-debug-check: all
-	@echo "=== 运行认证测试调试 ==="
-	@chmod +x test_auth_debug.sh
-	@./test_auth_debug.sh
-	@echo "=== 运行标准测试 ==="
-	@$(MAKE) $(AM_MAKEFLAGS) check
+# 创建测试包装器脚本
+test_wrapper.sh:
+	@echo '#!/bin/bash' > test_wrapper.sh
+	@echo 'test_name=$$1' >> test_wrapper.sh
+	@echo 'shift' >> test_wrapper.sh
+	@echo 'echo "运行测试: $$test_name"' >> test_wrapper.sh
+	@echo 'if ./$$test_name "$$@"; then' >> test_wrapper.sh
+	@echo '    echo "PASS: $$test_name"' >> test_wrapper.sh
+	@echo '    exit 0' >> test_wrapper.sh
+	@echo 'else' >> test_wrapper.sh
+	@echo '    echo "FAIL: $$test_name"' >> test_wrapper.sh
+	@echo '    echo "=== 测试失败详情 ==="' >> test_wrapper.sh
+	@echo '    echo "测试名称: $$test_name"' >> test_wrapper.sh
+	@echo '    echo "退出状态: $$?"' >> test_wrapper.sh
+	@echo '    echo "系统信息: $$(uname -a)"' >> test_wrapper.sh
+	@echo '    echo "当前目录: $$(pwd)"' >> test_wrapper.sh
+	@echo '    echo "时间: $$(date)"' >> test_wrapper.sh
+	@echo '    if [ "$$test_name" = "t_auth" ]; then' >> test_wrapper.sh
+	@echo '        echo "=== 认证测试特殊调试信息 ==="' >> test_wrapper.sh
+	@echo '        echo "OpenSSL版本: $$(openssl version 2>/dev/null || echo '\''OpenSSL未安装'\'')"' >> test_wrapper.sh
+	@echo '        echo "密钥文件检查:"' >> test_wrapper.sh
+	@echo '        if [ -f "public.pem" ]; then' >> test_wrapper.sh
+	@echo '            echo "  ✓ public.pem 存在 ($$(stat -c%s public.pem 2>/dev/null || echo '\''unknown'\'') 字节)"' >> test_wrapper.sh
+	@echo '        else' >> test_wrapper.sh
+	@echo '            echo "  ✗ public.pem 不存在"' >> test_wrapper.sh
+	@echo '        fi' >> test_wrapper.sh
+	@echo '        if [ -f "private.pem" ]; then' >> test_wrapper.sh
+	@echo '            echo "  ✓ private.pem 存在 ($$(stat -c%s private.pem 2>/dev/null || echo '\''unknown'\'') 字节)"' >> test_wrapper.sh
+	@echo '        else' >> test_wrapper.sh
+	@echo '            echo "  ✗ private.pem 不存在"' >> test_wrapper.sh
+	@echo '        fi' >> test_wrapper.sh
+	@echo '        if [ -f "iperf_config.h" ]; then' >> test_wrapper.sh
+	@echo '            if grep -q "HAVE_SSL" iperf_config.h 2>/dev/null; then' >> test_wrapper.sh
+	@echo '                echo "  ✓ HAVE_SSL 已定义"' >> test_wrapper.sh
+	@echo '            else' >> test_wrapper.sh
+	@echo '                echo "  ✗ HAVE_SSL 未定义"' >> test_wrapper.sh
+	@echo '            fi' >> test_wrapper.sh
+	@echo '        else' >> test_wrapper.sh
+	@echo '            echo "  ✗ iperf_config.h 不存在"' >> test_wrapper.sh
+	@echo '        fi' >> test_wrapper.sh
+	@echo '    fi' >> test_wrapper.sh
+	@echo '    exit 1' >> test_wrapper.sh
+	@echo 'fi' >> test_wrapper.sh
+	@chmod +x test_wrapper.sh
+
+# 修改测试目标，使用包装器
+check-local: test_wrapper.sh
+	@echo "=== 使用增强的测试包装器运行测试 ==="
+	@for test in $(TESTS); do \
+		echo "运行测试: $$test"; \
+		./test_wrapper.sh $$test || exit 1; \
+	done
+	@echo "=== 所有测试完成 ==="
 
 dist_man_MANS          = iperf3.1 libiperf.3

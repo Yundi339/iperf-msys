@@ -735,6 +735,12 @@ t_auth_SOURCES = t_auth.c
 t_auth_CFLAGS = -g
 t_auth_LDFLAGS = 
 t_auth_LDADD = libiperf.la $(LIBS)
+
+# 设置测试环境，使测试失败时显示详细错误信息
+AM_TESTS_ENVIRONMENT = \
+    export VERBOSE=1; \
+    export TEST_DEBUG=1;
+
 dist_man_MANS = iperf3.1 libiperf.3
 all: iperf_config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
@@ -1602,7 +1608,7 @@ $(TEST_SUITE_LOG): $(TEST_LOGS)
 	}; \
 	please_report () \
 	{ \
-echo "Some test(s) failed.  Please report this to $(PACKAGE_BUGREPORT)";    \
+echo "Some test(s) failed.  Please report this to $(PACKAGE_BUGREPORT),";    \
 echo "together with the test-suite.log file (gzipped) and your system";      \
 echo "information.  Thanks.";                                                \
 	}; \
@@ -1631,14 +1637,6 @@ echo "information.  Thanks.";                                                \
 	echo "$$col$$br$$std";						\
 	if $$success; then :; else					\
 	  echo "$${col}See $(subdir)/$(TEST_SUITE_LOG) for debugging.$${std}";\
-	  echo "$${col}=== 失败的测试日志 ===$${std}";			\
-	  for log in $(TEST_LOGS); do					\
-	    if test -f "$$log" && grep -q ":test-result: FAIL" "$${log%.log}.trs" 2>/dev/null; then \
-	      echo "$${col}--- $$log ---$${std}";			\
-	      cat "$$log";						\
-	      echo "$${col}--- 结束 $$log ---$${std}";			\
-	    fi;								\
-	  done;								\
 	  if test -n "$(PACKAGE_BUGREPORT)"; then			\
 	    please_report | sed -e "s/^/$${col}/" -e s/'$$'/"$${std}"/; \
 	  fi;								\
@@ -1975,6 +1973,14 @@ uninstall-man: uninstall-man1 uninstall-man3
 
 .PRECIOUS: Makefile
 
+
+# 添加调试测试目标
+debug-check: all
+	@echo "=== 运行认证测试调试 ==="
+	@chmod +x test_auth_debug.sh
+	@./test_auth_debug.sh
+	@echo "=== 运行标准测试 ==="
+	@$(MAKE) $(AM_MAKEFLAGS) check
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
