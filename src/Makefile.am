@@ -103,4 +103,17 @@ TESTS                   = \
                         t_api \
 			t_auth
 
+# 设置测试环境，使测试失败时显示详细错误信息
+AM_TESTS_ENVIRONMENT = \
+    export VERBOSE=1; \
+    export TEST_DEBUG=1;
+
+# 添加调试测试目标
+debug-check: all
+	@echo "=== 运行认证测试调试 ==="
+	@chmod +x test_auth_debug.sh
+	@./test_auth_debug.sh
+	@echo "=== 运行标准测试 ==="
+	@$(MAKE) $(AM_MAKEFLAGS) check
+
 dist_man_MANS          = iperf3.1 libiperf.3

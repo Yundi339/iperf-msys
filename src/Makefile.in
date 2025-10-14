@@ -1602,7 +1602,7 @@ $(TEST_SUITE_LOG): $(TEST_LOGS)
 	}; \
 	please_report () \
 	{ \
-echo "Some test(s) failed.  Please report this to $(PACKAGE_BUGREPORT),";    \
+echo "Some test(s) failed.  Please report this to $(PACKAGE_BUGREPORT)";    \
 echo "together with the test-suite.log file (gzipped) and your system";      \
 echo "information.  Thanks.";                                                \
 	}; \
@@ -1631,6 +1631,14 @@ echo "information.  Thanks.";                                                \
 	echo "$$col$$br$$std";						\
 	if $$success; then :; else					\
 	  echo "$${col}See $(subdir)/$(TEST_SUITE_LOG) for debugging.$${std}";\
+	  echo "$${col}=== 失败的测试日志 ===$${std}";			\
+	  for log in $(TEST_LOGS); do					\
+	    if test -f "$$log" && grep -q ":test-result: FAIL" "$${log%.log}.trs" 2>/dev/null; then \
+	      echo "$${col}--- $$log ---$${std}";			\
+	      cat "$$log";						\
+	      echo "$${col}--- 结束 $$log ---$${std}";			\
+	    fi;								\
+	  done;								\
 	  if test -n "$(PACKAGE_BUGREPORT)"; then			\
 	    please_report | sed -e "s/^/$${col}/" -e s/'$$'/"$${std}"/; \
 	  fi;								\
