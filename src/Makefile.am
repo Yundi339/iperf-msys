@@ -108,10 +108,15 @@ AM_TESTS_ENVIRONMENT = \
     export VERBOSE=1; \
     export TEST_DEBUG=1;
 
-# 修改测试目标，使用包装器
-check-local:
+# 重写check-TESTS目标，使用我们的包装器
+check-TESTS:
 	@echo "=== 使用增强的测试包装器运行测试 ==="
+	@if [ ! -f "test_wrapper.sh" ]; then \
+		echo "错误: test_wrapper.sh 不存在"; \
+		exit 1; \
+	fi
 	@chmod +x test_wrapper.sh
+	@echo "测试列表: $(TESTS)"
 	@for test in $(TESTS); do \
 		echo "运行测试: $$test"; \
 		./test_wrapper.sh $$test || exit 1; \

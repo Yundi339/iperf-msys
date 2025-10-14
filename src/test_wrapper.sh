@@ -5,7 +5,18 @@ shift
 
 echo "运行测试: $test_name"
 
-if ./$test_name "$@"; then
+# 检查测试程序是否存在
+if [ ! -f "./$test_name" ]; then
+    echo "ERROR: 测试程序 $test_name 不存在"
+    echo "当前目录: $(pwd)"
+    echo "文件列表:"
+    ls -la *.exe 2>/dev/null || echo "没有找到 .exe 文件"
+    exit 1
+fi
+
+# 运行测试并捕获输出
+echo "执行命令: ./$test_name $*"
+if ./$test_name "$@" 2>&1; then
     echo "PASS: $test_name"
     exit 0
 else
