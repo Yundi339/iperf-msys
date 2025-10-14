@@ -72,6 +72,10 @@ jobs:
             base-devel
             mingw-w64-ucrt-x86_64-toolchain
             mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-libssl
+            mingw-w64-ucrt-x86_64-libcrypto
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-ca-certificates
             autoconf
             automake
             libtool
