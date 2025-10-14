@@ -88,6 +88,15 @@ jobs:
           which automake || (echo "automake not found" && exit 1)
           which libtool || (echo "libtool not found" && exit 1)
           echo "All build tools verified successfully"
+          
+          echo "=== OpenSSL 诊断信息 ==="
+          echo "OpenSSL版本: $(openssl version)"
+          echo "OpenSSL路径: $(which openssl)"
+          echo "库路径检查:"
+          find /ucrt64 -name "*ssl*" -o -name "*crypto*" | head -10
+          echo "环境变量:"
+          echo "  PATH: $PATH"
+          echo "  LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-未设置}"
 
       - name: Build Windows UCRT
         shell: msys2 {0}
@@ -95,6 +104,8 @@ jobs:
           BRANCH: ${{ github.head_ref || github.ref_name }}
           BUILD_VERSION: ${{ needs.setup_release.outputs.release_tag }}
           COMMIT: ${{ needs.setup_release.outputs.release_commit }}
+          LD_LIBRARY_PATH: "/ucrt64/lib"
+          PKG_CONFIG_PATH: "/ucrt64/lib/pkgconfig"
         run: |
           set -e
           
@@ -107,6 +118,12 @@ jobs:
           # 生成configure脚本
           ./bootstrap.sh
           
+          # OpenSSL 配置检查
+          echo "=== OpenSSL 配置检查 ==="
+          pkg-config --exists openssl && echo "OpenSSL pkg-config 可用" || echo "OpenSSL pkg-config 不可用"
+          pkg-config --cflags openssl
+          pkg-config --libs openssl
+          
           # 配置构建 - 静态编译
           ./configure \
             --prefix=/ucrt64 \
@@ -114,14 +131,20 @@ jobs:
             --build=x86_64-w64-mingw32 \
             --disable-shared \
             --enable-static \
+            --with-openssl=/ucrt64 \
+            CPPFLAGS="-I/ucrt64/include" \
             CFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
             CXXFLAGS="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions --param=ssp-buffer-size=4" \
-            LDFLAGS="-static -Wl,--enable-auto-import -Wl,--enable-runtime-pseudo-reloc" \
+            LDFLAGS="-static -L/ucrt64/lib -Wl,--enable-auto-import -Wl,--enable-runtime-pseudo-reloc" \
             LIBS="-lssl -lcrypto -lpthread -lws2_32 -lcrypt32" \
             PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig"
           
           # 编译
           make -j$(nproc)
+          
+          # 设置测试环境
+          export LD_LIBRARY_PATH="/ucrt64/lib:$LD_LIBRARY_PATH"
+          export PATH="/ucrt64/bin:$PATH"
           
           # 运行测试
           make check
