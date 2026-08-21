@@ -266,16 +266,20 @@ iperf_win32_sendto(iperf_socket_t s, const void *buf, int len, int flags,
 #define socket(af, type, protocol) iperf_win32_socket((af), (type), (protocol))
 #define accept(s, addr, addrlen) iperf_win32_accept((s), (addr), (addrlen))
 #define connect(s, name, namelen) iperf_win32_connect((s), (name), (namelen))
-#define bind iperf_win32_bind
+#define bind(s, name, namelen) iperf_win32_bind((s), (name), (namelen))
 #define listen(s, backlog) iperf_win32_listen((s), (backlog))
-#define shutdown iperf_win32_shutdown
-#define getsockname iperf_win32_getsockname
-#define getpeername iperf_win32_getpeername
-#define setsockopt iperf_win32_setsockopt
-#define getsockopt iperf_win32_getsockopt
-#define recv iperf_win32_recv
-#define recvfrom iperf_win32_recvfrom
-#define send iperf_win32_send
-#define sendto iperf_win32_sendto
+#define shutdown(s, how) iperf_win32_shutdown((s), (how))
+#define getsockname(s, name, namelen) iperf_win32_getsockname((s), (name), (namelen))
+#define getpeername(s, name, namelen) iperf_win32_getpeername((s), (name), (namelen))
+#define setsockopt(s, level, optname, optval, optlen) \
+    iperf_win32_setsockopt((s), (level), (optname), (optval), (optlen))
+#define getsockopt(s, level, optname, optval, optlen) \
+    iperf_win32_getsockopt((s), (level), (optname), (optval), (optlen))
+#define recv(s, buf, len, flags) iperf_win32_recv((s), (buf), (len), (flags))
+#define recvfrom(s, buf, len, flags, from, fromlen) \
+    iperf_win32_recvfrom((s), (buf), (len), (flags), (from), (fromlen))
+#define send(s, buf, len, flags) iperf_win32_send((s), (buf), (len), (flags))
+#define sendto(s, buf, len, flags, to, tolen) \
+    iperf_win32_sendto((s), (buf), (len), (flags), (to), (tolen))
 
 #endif
