@@ -134,7 +134,7 @@ jobs:
           }
           trap cleanup EXIT
           sleep 1
-          "$@"
+          timeout 20 "$@"
           wait "$server_pid"
           trap - EXIT
         }
@@ -148,7 +148,7 @@ jobs:
         server_pid=$!
         trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
         sleep 1
-        src/iperf3.exe -c 127.0.0.1 -p 6203 -P 80 -t 1
+        timeout 60 src/iperf3.exe -c 127.0.0.1 -p 6203 -P 80 -t 1
         wait "$server_pid"
         trap - EXIT
         modes=('' '-R' '--bidir' '' '')
@@ -159,9 +159,9 @@ jobs:
           trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
           sleep 1
           if [[ -n "${modes[$i]}" ]]; then
-            src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1 "${modes[$i]}"
+            timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1 "${modes[$i]}"
           else
-            src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1
+            timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1
           fi
           wait "$server_pid"
           trap - EXIT
