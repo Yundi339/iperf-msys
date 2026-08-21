@@ -27,13 +27,8 @@
 #ifndef        __IPERF_API_H
 #define        __IPERF_API_H
 
-#ifdef HAVE_WINSOCK2_H
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
 #include <sys/socket.h>
 #include <sys/time.h>
-#endif
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -50,11 +45,7 @@ extern "C" { /* open extern "C" */
 #include <stdatomic.h>
 #else
 #warning "No <stdatomic.h> available"
-#ifdef HAVE_WINSOCK2_H
-typedef uint64_t atomic_uint_fast64_t;
-#else
 typedef u_int64_t atomic_uint_fast64_t;
-#endif
 #endif // HAVE_STDATOMIC_H
 
 struct iperf_test;
@@ -115,6 +106,7 @@ typedef atomic_uint_fast64_t atomic_iperf_size_t;
 #define OPT_SKIP_RX_COPY 32
 #define OPT_JSON_STREAM_FULL_OUTPUT 33
 #define OPT_SERVER_MAX_DURATION 34
+#define OPT_GSRO 35
 
 /* states */
 #define TEST_START 1
@@ -262,7 +254,7 @@ void      add_to_interval_list(struct iperf_stream_result * rp, struct iperf_int
 
 /**
  * connect_msg -- displays connection message
- * denoting senfer/receiver details
+ * denoting sender/receiver details
  *
  */
 void      connect_msg(struct iperf_stream * sp);
@@ -411,6 +403,7 @@ void iperf_signormalexit(struct iperf_test *test, const char *format, ...) __att
 void iperf_exit(struct iperf_test *test, int exit_code, const char *format, va_list argp) __attribute__ ((noreturn));
 char *iperf_strerror(int);
 extern int i_errno;
+extern const char *errarg;
 enum {
     IENONE = 0,             // No error
     /* Parameter errors */
@@ -451,6 +444,9 @@ enum {
     IESERVERAUTHUSERS = 35,  // Cannot access authorized users file
     IECNTLKA = 36,          // Control connection Keepalive period should be larger than the full retry period (interval * count)
     IEMAXSERVERTESTDURATIONEXCEEDED = 37, // Client's duration exceeds server's maximum duration
+    IEUNITVAL = 38,         // Invalid unit value or suffix
+    IERVRSONLYSKIPRXCOPY = 39, // This OS does not support --skip-rx-copy
+    IEBADDSCP = 40,         // Bad DSCP value
     /* Test errors */
     IENEWTEST = 100,        // Unable to create a new test (check perror)
     IEINITTEST = 101,       // Test initialization failed (check perror)
@@ -511,12 +507,13 @@ enum {
     IESETCNTLKAINTERVAL = 157, // Unable to set/get socket keepalive TCP retry interval (TCP_KEEPINTVL) option
     IESETCNTLKACOUNT = 158,    // Unable to set/get socket keepalive TCP number of retries (TCP_KEEPCNT) option
     IEPTHREADSIGMASK=159,      // Unable to initialize sub thread signal mask (check perror)
+    IESERVERTESTDURATIONEXPIRED = 160, // Server test duration expired
     /* Stream errors */
     IECREATESTREAM = 200,   // Unable to create a new stream (check herror/perror)
     IEINITSTREAM = 201,     // Unable to initialize stream (check herror/perror)
     IESTREAMLISTEN = 202,   // Unable to start stream listener (check perror)
     IESTREAMCONNECT = 203,  // Unable to connect stream (check herror/perror)
-    IESTREAMACCEPT = 204,   // Unable to accepte stream connection (check perror)
+    IESTREAMACCEPT = 204,   // Unable to accept stream connection (check perror)
     IESTREAMWRITE = 205,    // Unable to write to stream socket (check perror)
     IESTREAMREAD = 206,     // Unable to read from stream (check perror)
     IESTREAMCLOSE = 207,    // Stream has closed unexpectedly

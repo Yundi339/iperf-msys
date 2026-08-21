@@ -32,6 +32,18 @@
 #include <string.h>
 #include <getopt.h>
 #include <errno.h>
+#include <unistd.h>
+#include <assert.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <stdint.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sched.h>
 #include <setjmp.h>
 #include <signal.h>
 
@@ -47,38 +59,11 @@
 #include "iperf_util.h"
 #include "iperf_locale.h"
 
-#ifdef HAVE_WINSOCK2_H
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <io.h>
-#include <process.h>
-#else
-#include <unistd.h>
-#include <assert.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#ifdef HAVE_WINSOCK2_H
-// Windows has netdb functions in ws2tcpip.h, no need for netdb.h
-#else
-#include <netdb.h>
-#endif
-#include <stdint.h>
-#include <sys/time.h>
-#include <sys/resource.h>
-#include <sched.h>
-#endif
-
-
 #if defined(HAVE_TCP_CONGESTION)
 #if !defined(TCP_CA_NAME_MAX)
 #define TCP_CA_NAME_MAX 16
 #endif /* TCP_CA_NAME_MAX */
 #endif /* HAVE_TCP_CONGESTION */
-
-static void cleanup_server(struct iperf_test *test);
 
 void *
 iperf_server_worker_run(void *s) {
@@ -86,10 +71,6 @@ iperf_server_worker_run(void *s) {
     struct iperf_test *test = sp->test;
 
     /* Blocking signal to make sure that signal will be handled by main thread */
-#ifdef HAVE_WINSOCK2_H
-    // Windows doesn't have sigset_t and signal functions
-    // Signal handling is different in Windows
-#else
     sigset_t set;
     sigemptyset(&set);
 #ifdef SIGTERM
@@ -105,10 +86,9 @@ iperf_server_worker_run(void *s) {
 	    i_errno = IEPTHREADSIGMASK;
 	    goto cleanup_and_fail;
     }
-#endif
 
     /* Allow this thread to be cancelled even if it's in a syscall */
-    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
     while (! (test->done) && ! (sp->done)) {
@@ -187,15 +167,6 @@ iperf_accept(struct iperf_test *test)
     if (test->ctrl_sck == -1) {
         /* Server free, accept new client */
         test->ctrl_sck = s;
-        
-        // Check if the connection is still alive after accept
-        int error = 0;
-        socklen_t len = sizeof(error);
-        if (getsockopt(s, SOL_SOCKET, SO_ERROR, (char*)&error, &len) < 0 || error != 0) {
-            iperf_err(test, "iperf_accept: Connection failed after accept, error=%d", error);
-            goto error_handling;
-        }
-        
         // set TCP_NODELAY for lower latency on control messages
         int flag = 1;
         if (setsockopt(test->ctrl_sck, IPPROTO_TCP, TCP_NODELAY, (char *) &flag, sizeof(int))) {
@@ -255,19 +226,10 @@ iperf_accept(struct iperf_test *test)
             if (test->debug)
                 printf("successfully sent ACCESS_DENIED to an unsolicited connection request during active test\n");
         }
-#ifdef HAVE_WINSOCK2_H
-        closesocket(s);
-#else
         close(s);
-#endif
     }
     return 0;
     error_handling:
-#ifdef HAVE_WINSOCK2_H
-        closesocket(s);
-#else
-        close(s);
-#endif
         return ret;
 }
 
@@ -310,11 +272,7 @@ iperf_handle_message_server(struct iperf_test *test)
             SLIST_FOREACH(sp, &test->streams, streams) {
                 FD_CLR(sp->socket, &test->read_set);
                 FD_CLR(sp->socket, &test->write_set);
-#ifdef HAVE_WINSOCK2_H
-                closesocket(sp->socket);
-#else
                 close(sp->socket);
-#endif
             }
             test->reporter_callback(test);
             if (iperf_set_send_state(test, EXCHANGE_RESULTS) != 0)
@@ -341,15 +299,12 @@ iperf_handle_message_server(struct iperf_test *test)
 
             // XXX: Remove this line below!
 	    iperf_err(test, "the client has terminated");
-            
-            cleanup_server(test);
-            if (iperf_init_test(test) < 0) {
-                iperf_set_test_state(test, IPERF_DONE);
-                return -1;
+            SLIST_FOREACH(sp, &test->streams, streams) {
+                FD_CLR(sp->socket, &test->read_set);
+                FD_CLR(sp->socket, &test->write_set);
+                close(sp->socket);
             }
-            FD_ZERO(&test->read_set);
-            FD_ZERO(&test->write_set);
-            iperf_set_test_state(test, IPERF_START);
+            iperf_set_test_state(test, IPERF_DONE);
             break;
         default:
             i_errno = IEMESSAGE;
@@ -364,27 +319,32 @@ server_timer_proc(TimerClientData client_data, struct iperf_time *nowP)
 {
     struct iperf_test *test = client_data.p;
     struct iperf_stream *sp;
+    int32_t err;
 
     test->timer = NULL;
     if (test->done)
         return;
     test->done = 1;
+    iperf_err(test, "error - server test duration expired - test is terminated by the server");
+    if (iperf_set_send_state(test, SERVER_ERROR) == 0) {
+        i_errno = IESERVERTESTDURATIONEXPIRED;
+        err = htonl(i_errno);
+        if (Nwrite(test->ctrl_sck, (char*) &err, sizeof(err), Ptcp) == sizeof(err)) {
+            err = 0;
+            Nwrite(test->ctrl_sck, (char*) &err, sizeof(err), Ptcp);
+        };
+    }
     /* Free streams */
     while (!SLIST_EMPTY(&test->streams)) {
         sp = SLIST_FIRST(&test->streams);
-        SLIST_REMOVE_HEAD(&test->streams, streams);
-#ifdef HAVE_WINSOCK2_H
-        closesocket(sp->socket);
-#else
-        close(sp->socket);
-#endif
-        iperf_free_stream(sp);
+        if (sp->socket != -1) {
+            SLIST_REMOVE_HEAD(&test->streams, streams);
+            close(sp->socket);
+            sp->socket = -1;
+            iperf_free_stream(sp);
+        }
     }
-#ifdef HAVE_WINSOCK2_H
-    closesocket(test->ctrl_sck);
-#else
     close(test->ctrl_sck);
-#endif
     test->ctrl_sck = -1;
 }
 
@@ -500,6 +460,18 @@ static void
 cleanup_server(struct iperf_test *test)
 {
     struct iperf_stream *sp;
+    int32_t err;
+
+    /* Try to send the error code to the client*/
+    if (i_errno != IENONE && test->ctrl_sck != -1) {
+        if (iperf_set_send_state(test, SERVER_ERROR) == 0) {
+            err = htonl(i_errno);
+            if (Nwrite(test->ctrl_sck, (char*) &err, sizeof(err), Ptcp) >= 0) {
+                err = htonl(errno);
+                Nwrite(test->ctrl_sck, (char*) &err, sizeof(err), Ptcp);
+            }
+        }
+    }
 
     /* Cancel outstanding threads */
     int i_errno_save = i_errno;
@@ -507,30 +479,12 @@ cleanup_server(struct iperf_test *test)
         int rc;
         sp->done = 1;
         if (sp->thread_created == 1) {
-            // Remove socket from fd_set BEFORE closing to avoid select issues
-            if (sp->socket > -1) {
-                FD_CLR(sp->socket, &test->read_set);
-                FD_CLR(sp->socket, &test->write_set);
-            }
-            
-            // Cancel thread first, then close socket
             rc = pthread_cancel(sp->thr);
             if (rc != 0 && rc != ESRCH) {
                 i_errno = IEPTHREADCANCEL;
                 errno = rc;
                 iperf_err(test, "cleanup_server in pthread_cancel - %s", iperf_strerror(i_errno));
             }
-            
-            // Close the socket to wake up any blocking recv calls
-            if (sp->socket > -1) {
-#ifdef HAVE_WINSOCK2_H
-                closesocket(sp->socket);
-#else
-                close(sp->socket);
-#endif
-                sp->socket = -1;
-            }
-            
             rc = pthread_join(sp->thr, NULL);
             if (rc != 0 && rc != ESRCH) {
                 i_errno = IEPTHREADJOIN;
@@ -554,38 +508,23 @@ cleanup_server(struct iperf_test *test)
 	if (sp->socket > -1) {
             FD_CLR(sp->socket, &test->read_set);
             FD_CLR(sp->socket, &test->write_set);
-#ifdef HAVE_WINSOCK2_H
-            closesocket(sp->socket);
-#else
             close(sp->socket);
-#endif
             sp->socket = -1;
 	}
     }
 
     /* Close open test sockets */
     if (test->ctrl_sck > -1) {
-#ifdef HAVE_WINSOCK2_H
-	closesocket(test->ctrl_sck);
-#else
-	close(test->ctrl_sck);
-#endif
+        // Make sure all control messages (especially error messages) are received by the client before the socket is closed
+        iperf_sync_close_socket(test->ctrl_sck);
         test->ctrl_sck = -1;
     }
     if (test->listener > -1) {
-#ifdef HAVE_WINSOCK2_H
-	closesocket(test->listener);
-#else
 	close(test->listener);
-#endif
         test->listener = -1;
     }
     if (test->prot_listener > -1) {     // May remain open if create socket failed
-#ifdef HAVE_WINSOCK2_H
-	closesocket(test->prot_listener);
-#else
 	close(test->prot_listener);
-#endif
         test->prot_listener = -1;
     }
 
@@ -606,7 +545,6 @@ cleanup_server(struct iperf_test *test)
         free(test->congestion_used);
 	test->congestion_used = NULL;
     }
-    
     if (test->timer != NULL) {
         tmr_cancel(test->timer);
         test->timer = NULL;
@@ -635,6 +573,7 @@ iperf_run_server(struct iperf_test *test)
     int64_t t_usecs;
     int64_t timeout_us;
     int64_t rcv_timeout_us;
+    int32_t err;
 
     if (test->logfile) {
         if (iperf_open_logfile(test) < 0)
@@ -681,11 +620,30 @@ iperf_run_server(struct iperf_test *test)
 
     while (test->state != IPERF_DONE) {
 
-        // Check if average transfer rate was exceeded (condition set in the callback routines)
+    // Check if average transfer rate was exceeded (condition set in the callback routines)
 	if (test->bitrate_limit_exceeded) {
-	    cleanup_server(test);
-            i_errno = IETOTALRATE;
+        i_errno = IETOTALRATE;
+        if (iperf_set_send_state(test, SERVER_ERROR) != 0) {
+            cleanup_server(test);
             return -1;
+        }
+
+        err = htonl(i_errno);
+        if (Nwrite(test->ctrl_sck, (char*) &err, sizeof(err), Ptcp) < 0) {
+            cleanup_server(test);
+            i_errno = IECTRLWRITE;
+            return -1;
+        }
+
+        err = htonl(errno);
+        if (Nwrite(test->ctrl_sck, (char*) &err, sizeof(err), Ptcp) < 0) {
+            cleanup_server(test);
+            i_errno = IECTRLWRITE;
+            return -1;
+        }
+
+        cleanup_server(test);
+        return -1;
 	}
 
         memcpy(&read_set, &test->read_set, sizeof(fd_set));
@@ -719,13 +677,7 @@ iperf_run_server(struct iperf_test *test)
             timeout = &used_timeout;
         }
 
-        // Check if there are any file descriptors to monitor
-        if (test->max_fd < 0 || (FD_ISSET(test->listener, &read_set) == 0 && test->ctrl_sck == -1)) {
-            cleanup_server(test);
-            return -1;  // Exit if no valid file descriptors
-        } else {
-            result = select(test->max_fd + 1, &read_set, &write_set, NULL, timeout);
-        }
+        result = select(test->max_fd + 1, &read_set, &write_set, NULL, timeout);
         if (result < 0 && errno != EINTR) {
             cleanup_server(test);
             i_errno = IESELECT;
@@ -773,9 +725,6 @@ iperf_run_server(struct iperf_test *test)
                         if (iperf_get_verbose(test))
                             iperf_err(test, "Server restart (#%d) during active test due to idle timeout for receiving data",
                                       test->server_forced_no_msg_restarts_count);
-                        
-                        // Show client termination message for consistency
-                        iperf_err(test, "the client has terminated, reason: idle timeout");
                         cleanup_server(test);
                         return -1;
                     }
@@ -842,11 +791,7 @@ iperf_run_server(struct iperf_test *test)
                         if ((opt = test->settings->snd_timeout)) {
                             if (setsockopt(s, IPPROTO_TCP, TCP_USER_TIMEOUT, &opt, sizeof(opt)) < 0) {
                                 saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-                                closesocket(s);
-#else
                                 close(s);
-#endif
                                 cleanup_server(test);
                                 errno = saved_errno;
                                 i_errno = IESETUSERTIMEOUT;
@@ -874,11 +819,7 @@ iperf_run_server(struct iperf_test *test)
 				}
 				else {
 				    saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-				    closesocket(s);
-#else
 				    close(s);
-#endif
 				    cleanup_server(test);
 				    errno = saved_errno;
 				    i_errno = IESETCONGESTION;
@@ -893,11 +834,7 @@ iperf_run_server(struct iperf_test *test)
 			    rc = getsockopt(s, IPPROTO_TCP, TCP_CONGESTION, ca, &len);
                             if (rc < 0 && test->congestion) {
 				saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-				closesocket(s);
-#else
 				close(s);
-#endif
 				cleanup_server(test);
 				errno = saved_errno;
 				i_errno = IESETCONGESTION;
@@ -954,20 +891,12 @@ iperf_run_server(struct iperf_test *test)
                 if (rec_streams_accepted == streams_to_rec && send_streams_accepted == streams_to_send) {
                     if (test->protocol->id != Ptcp) {
                         FD_CLR(test->prot_listener, &test->read_set);
-#ifdef HAVE_WINSOCK2_H
-                        closesocket(test->prot_listener);
-#else
                         close(test->prot_listener);
-#endif
                         test->prot_listener = -1;
                     } else {
                         if (test->no_delay || test->settings->mss || test->settings->socket_bufsize) {
                             FD_CLR(test->listener, &test->read_set);
-#ifdef HAVE_WINSOCK2_H
-                            closesocket(test->listener);
-#else
                             close(test->listener);
-#endif
 			    test->listener = -1;
                             if ((s = netannounce(test->settings->domain, Ptcp, test->bind_address, test->bind_dev, test->server_port)) < 0) {
 				cleanup_server(test);
@@ -1046,6 +975,10 @@ iperf_run_server(struct iperf_test *test)
                         i_errno = IEPTHREADATTRDESTROY;
                         cleanup_server(test);
                     };
+
+                    /* Reset receive-progress baseline after workers are ready */
+                    last_receive_blocks = test->blocks_received;
+                    iperf_time_now(&last_receive_time);
                 }
             }
         }

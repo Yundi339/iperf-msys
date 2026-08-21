@@ -27,15 +27,6 @@
 #ifndef __NET_H
 #define __NET_H
 
-#include "iperf_config.h"
-#ifdef HAVE_WINSOCK2_H
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <sys/socket.h>
-#include <netdb.h>
-#endif
-
 int timeout_connect(int s, const struct sockaddr *name, socklen_t namelen, int timeout);
 int create_socket(int domain, int type, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, struct addrinfo **server_res_out);
 int netdial(int domain, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, int timeout);
@@ -44,12 +35,16 @@ int Nread(int fd, char *buf, size_t count, int prot);
 int Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt);
 int Nread_no_select(int fd, char *buf, size_t count, int prot);
 int Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt);
+int Nread_gro(int fd, char *buf, size_t count, int prot, int *dgram_sz);
 int Nwrite(int fd, const char *buf, size_t count, int prot) /* __attribute__((hot)) */;
+int Nwrite_gso(int fd, const char *buf, size_t count, int prot, uint16_t gso_size);
 int has_sendfile(void);
 int Nsendfile(int fromfd, int tofd, const char *buf, size_t count) /* __attribute__((hot)) */;
 int setnonblocking(int fd, int nonblocking);
 int getsockdomain(int sock);
 int parse_qos(const char *tos);
+int bind_to_device(int s, int domain, const char *bind_dev);
+void iperf_sync_close_socket(int sock);
 
 #define NET_SOFTERROR -1
 #define NET_HARDERROR -2

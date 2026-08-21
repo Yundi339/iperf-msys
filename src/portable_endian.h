@@ -95,16 +95,6 @@
 #		define be64toh(x) ntohll(x)
 #		define le64toh(x) (x)
 
-/* Windows doesn't have ntohll/htonll, provide implementations */
-#ifdef _WIN32
-static inline uint64_t ntohll(uint64_t x) {
-    return ((uint64_t)ntohl((uint32_t)x) << 32) | ntohl((uint32_t)(x >> 32));
-}
-static inline uint64_t htonll(uint64_t x) {
-    return ((uint64_t)htonl((uint32_t)x) << 32) | htonl((uint32_t)(x >> 32));
-}
-#endif
-
 #	elif BYTE_ORDER == BIG_ENDIAN
 
 		/* that would be xbox 360 */

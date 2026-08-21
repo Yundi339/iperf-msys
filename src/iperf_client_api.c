@@ -29,6 +29,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <sys/uio.h>
+#include <arpa/inet.h>
+#include <signal.h>
 
 #include "iperf.h"
 #include "iperf_api.h"
@@ -37,20 +45,6 @@
 #include "iperf_time.h"
 #include "net.h"
 #include "timer.h"
-
-#ifdef HAVE_WINSOCK2_H
-#include <winsock2.h>
-#include <ws2tcpip.h>
-// Windows has select in winsock2.h, no need for sys/select.h
-#else
-#include <unistd.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/select.h>
-#include <sys/uio.h>
-#include <arpa/inet.h>
-#endif
 
 #if defined(HAVE_TCP_CONGESTION)
 #if !defined(TCP_CA_NAME_MAX)
@@ -64,10 +58,6 @@ iperf_client_worker_run(void *s) {
     struct iperf_test *test = sp->test;
 
     /* Blocking signal to make sure that signal will be handled by main thread */
-#ifdef HAVE_WINSOCK2_H
-    // Windows doesn't have sigset_t and signal functions
-    // Signal handling is different in Windows
-#else
     sigset_t set;
     sigemptyset(&set);
 #ifdef SIGTERM
@@ -76,10 +66,6 @@ iperf_client_worker_run(void *s) {
 #ifdef SIGHUP
     sigaddset(&set, SIGHUP);
 #endif
-#endif
-#ifdef HAVE_WINSOCK2_H
-    // Windows doesn't have pthread_sigmask
-#else
 #ifdef SIGINT
     sigaddset(&set, SIGINT);
 #endif
@@ -87,10 +73,9 @@ iperf_client_worker_run(void *s) {
 	    i_errno = IEPTHREADSIGMASK;
 	    goto cleanup_and_fail;
     }
-#endif
 
     /* Allow this thread to be cancelled even if it's in a syscall */
-    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
     while (! (test->done) && ! (sp->done)) {
@@ -332,7 +317,7 @@ iperf_handle_message_client(struct iperf_test *test)
     }
 
     /*!!! Why is this read() and not Nread()? */
-    if ((rval = Nread(test->ctrl_sck, (char*) &test->state, sizeof(signed char), test->protocol->id)) <= 0) {
+    if ((rval = read(test->ctrl_sck, (char*) &test->state, sizeof(signed char))) <= 0) {
         if (rval == 0) {
             i_errno = IECTRLCLOSE;
             return -1;
@@ -415,6 +400,11 @@ iperf_handle_message_client(struct iperf_test *test)
                 return -1;
             }
             errno = ntohl(err);
+            if (errno > 0) {    
+                iperf_err(test, "SERVER ERROR - %s, errno: %s", iperf_strerror(i_errno), strerror(errno));
+            } else {
+                iperf_err(test, "SERVER ERROR - %s", iperf_strerror(i_errno));
+            }
             return -1;
         default:
             i_errno = IEMESSAGE;
@@ -430,7 +420,7 @@ iperf_handle_message_client(struct iperf_test *test)
 int
 iperf_connect(struct iperf_test *test)
 {
-    int opt;
+    int opt, n;
     socklen_t len;
 
     if (NULL == test)
@@ -483,7 +473,7 @@ iperf_connect(struct iperf_test *test)
     if (test->ctrl_sck > test->max_fd) test->max_fd = test->ctrl_sck;
 
     len = sizeof(opt);
-    if (getsockopt(test->ctrl_sck, IPPROTO_TCP, TCP_MAXSEG, (char*)&opt, &len) < 0) {
+    if (getsockopt(test->ctrl_sck, IPPROTO_TCP, TCP_MAXSEG, &opt, &len) < 0) {
         test->ctrl_sck_mss = 0;
     }
     else {
@@ -531,6 +521,21 @@ iperf_connect(struct iperf_test *test)
 		printf("Setting UDP block size to %d\n", test->settings->blksize);
 	    }
 	}
+	/* Initialize GSO parameters when --gsro is used */
+	if (test->settings->gso) {
+	    test->settings->gso_dg_size = test->settings->blksize;
+	    /* use the multiple of datagram size for the best efficiency. */
+	    if (test->settings->gso_dg_size > 0) {
+                n = test->settings->gso_bf_size / test->settings->gso_dg_size;
+                if (n > GSO_MAX_DG_IN_BF) {
+                    n = GSO_MAX_DG_IN_BF;
+                }
+		test->settings->gso_bf_size = n * test->settings->gso_dg_size;
+	    } else {
+		/* If gso_dg_size is 0 (unlimited bandwidth), use default UDP datagram size */
+		test->settings->gso_dg_size = DEFAULT_UDP_BLKSIZE;
+	    }
+	}
 
 	/*
 	 * Regardless of whether explicitly or implicitly set, if the
@@ -562,6 +567,10 @@ iperf_client_end(struct iperf_test *test)
     /* Close all stream sockets */
     SLIST_FOREACH(sp, &test->streams, streams) {
         close(sp->socket);
+        if (sp->buffer_fd >= 0) {
+            close(sp->buffer_fd);
+            sp->buffer_fd = -1;
+        }
     }
 
     /* show final summary */
@@ -574,8 +583,10 @@ iperf_client_end(struct iperf_test *test)
     }
 
     /* Close control socket */
-    if (test->ctrl_sck >= 0)
-        close(test->ctrl_sck);
+    if (test->ctrl_sck >= 0) {
+        // Make sure all control messages are received by the server before the socket is closed
+        iperf_sync_close_socket(test->ctrl_sck);
+    }
 
     return 0;
 }
@@ -769,6 +780,20 @@ iperf_run_client(struct iperf_test * test)
 						 test->bytes_received >= test->settings->bytes)) ||
 	         (test->settings->blocks != 0 && (test->blocks_sent >= test->settings->blocks ||
 						  test->blocks_received >= test->settings->blocks)))) {
+
+                /*
+                 * Cancel the periodic timers.  As the timers are not re-set in this stage their expiration time
+                 * is in the past, so without the cancellation the select() timeout is set to 0,
+                 * and it enters a loop while waiting the exchanged results, etc.
+                 */
+                if (test->stats_timer != NULL) {
+                    tmr_cancel(test->stats_timer);
+                    test->stats_timer = NULL;
+                }
+                if (test->reporter_timer != NULL) {
+                    tmr_cancel(test->reporter_timer);
+                    test->reporter_timer = NULL;
+                }
 
                 /* Cancel outstanding sender threads */
                 SLIST_FOREACH(sp, &test->streams, streams) {

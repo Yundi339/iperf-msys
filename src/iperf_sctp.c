@@ -30,34 +30,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <sys/time.h>
+#include <sys/select.h>
+#include <limits.h>
 
 #include "iperf.h"
 #include "iperf_api.h"
 #include "iperf_sctp.h"
 #include "net.h"
-
-#ifdef HAVE_WINSOCK2_H
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <unistd.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#ifdef HAVE_WINSOCK2_H
-// Windows has netdb functions in ws2tcpip.h, no need for netdb.h
-#else
-#include <netdb.h>
-#endif
-#include <sys/time.h>
-#ifdef HAVE_WINSOCK2_H
-// Windows has select in winsock2.h, no need for sys/select.h
-#else
-#include <sys/select.h>
-#endif
-#include <limits.h>
-#endif
-
 
 
 
@@ -183,7 +168,7 @@ iperf_sctp_listen(struct iperf_test *test)
     /*
      * If binding to the wildcard address with no explicit address
      * family specified, then force us to get an AF_INET6 socket.
-     * More details in the comments in netanounce().
+     * More details in the comments in netannounce().
      */
     if (test->settings->domain == AF_UNSPEC && !test->bind_address) {
         hints.ai_family = AF_INET6;
@@ -224,11 +209,7 @@ iperf_sctp_listen(struct iperf_test *test)
     }
 
     if (test->bind_dev) {
-#if defined(SO_BINDTODEVICE)
-        if (setsockopt(s, SOL_SOCKET, SO_BINDTODEVICE,
-                       test->bind_dev, IFNAMSIZ) < 0)
-#endif // SO_BINDTODEVICE
-        {
+        if (bind_to_device(s, res->ai_family, test->bind_dev) < 0) {
             saved_errno = errno;
             close(s);
             freeaddrinfo(res);
@@ -363,11 +344,7 @@ iperf_sctp_connect(struct iperf_test *test)
     }
 
     if (test->bind_dev) {
-#if defined(SO_BINDTODEVICE)
-        if (setsockopt(s, SOL_SOCKET, SO_BINDTODEVICE,
-                       test->bind_dev, IFNAMSIZ) < 0)
-#endif // SO_BINDTODEVICE
-        {
+        if (bind_to_device(s, server_res->ai_family, test->bind_dev) < 0) {
             saved_errno = errno;
             close(s);
             freeaddrinfo(local_res);
@@ -750,9 +727,9 @@ out:
 /* iperf_sctp_get_rtt
  *
  * Get SCTP stream RTT.
- * Assuming that iperf3 supports only one-toone SCTP associassion, and not one-to-many associassion.
+ * Assuming that iperf3 supports only one-to-one SCTP association, and not one-to-many association.
  * 
- * Main resouses used are RFC-6458, man pages for SCTP,
+ * Main resources used are RFC-6458, man pages for SCTP,
  * https://docs.oracle.com/cd/E19253-01/817-4415/sockets-199/index.html.
  * 
  */
