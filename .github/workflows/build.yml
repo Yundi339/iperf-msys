@@ -11,6 +11,7 @@ on:
 jobs:
   cppcheck-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
     - run: echo "This job was triggered by a ${{ github.event_name }} event."
     - name: Checkout Repo
@@ -28,6 +29,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
     - name: install dependencies
       run: |
         sudo apt-get -y update && sudo apt-get install -y build-essential
@@ -49,6 +52,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
     - name: install dependencies
       run: |
         brew install coreutils
@@ -140,6 +145,8 @@ jobs:
         }
         run_case 6201 src/iperf3.exe -c 127.0.0.1 -p 6201 -t 1
         run_case 6202 src/iperf3.exe -c 127.0.0.1 -u -b 10M -p 6202 -t 1
+        run_case 6204 src/iperf3.exe -c 127.0.0.1 -u -b 10M -R -p 6204 -t 1
+        run_case 6205 src/iperf3.exe -c 127.0.0.1 -u -b 10M --bidir -p 6205 -t 1
     - name: parallel and lifecycle stress
       shell: msys2 {0}
       run: |
