@@ -70,8 +70,8 @@
 #		endif
 #	endif
 
-#	define be64toh(x) ntohll(x)
-#	define htobe64(x) htonll(x)
+#		define be64toh(x) iperf_win32_be64toh((uint64_t)(x))
+#		define htobe64(x) iperf_win32_htobe64((uint64_t)(x))
 
 #elif defined(__WINDOWS__)
 
@@ -79,6 +79,20 @@
 #	include <sys/param.h>
 
 #	if BYTE_ORDER == LITTLE_ENDIAN
+
+static inline uint64_t
+iperf_win32_htobe64(uint64_t value)
+{
+    return ((uint64_t) htonl((uint32_t) value) << 32) |
+        (uint64_t) htonl((uint32_t) (value >> 32));
+}
+
+static inline uint64_t
+iperf_win32_be64toh(uint64_t value)
+{
+    return ((uint64_t) ntohl((uint32_t) value) << 32) |
+        (uint64_t) ntohl((uint32_t) (value >> 32));
+}
 
 #		define htobe16(x) htons(x)
 #		define htole16(x) (x)
@@ -90,9 +104,9 @@
 #		define be32toh(x) ntohl(x)
 #		define le32toh(x) (x)
 
-#		define htobe64(x) htonll(x)
+#		define htobe64(x) iperf_win32_htobe64((uint64_t)(x))
 #		define htole64(x) (x)
-#		define be64toh(x) ntohll(x)
+#		define be64toh(x) iperf_win32_be64toh((uint64_t)(x))
 #		define le64toh(x) (x)
 
 #	elif BYTE_ORDER == BIG_ENDIAN

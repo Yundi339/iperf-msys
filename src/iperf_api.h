@@ -27,12 +27,21 @@
 #ifndef        __IPERF_API_H
 #define        __IPERF_API_H
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
+#endif
 #include <sys/time.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
+#include "iperf_socket.h"
 #ifdef __cplusplus
 extern "C" { /* open extern "C" */
 #endif
@@ -45,7 +54,7 @@ extern "C" { /* open extern "C" */
 #include <stdatomic.h>
 #else
 #warning "No <stdatomic.h> available"
-typedef u_int64_t atomic_uint_fast64_t;
+typedef uint64_t atomic_uint_fast64_t;
 #endif // HAVE_STDATOMIC_H
 
 struct iperf_test;
@@ -130,7 +139,7 @@ typedef atomic_uint_fast64_t atomic_iperf_size_t;
 
 /* Getter routines for some fields inside iperf_test. */
 int	iperf_get_verbose( struct iperf_test* ipt );
-int	iperf_get_control_socket( struct iperf_test* ipt );
+iperf_socket_t	iperf_get_control_socket( struct iperf_test* ipt );
 int	iperf_get_test_omit( struct iperf_test* ipt );
 int	iperf_get_test_duration( struct iperf_test* ipt );
 char	iperf_get_test_role( struct iperf_test* ipt );
@@ -178,7 +187,7 @@ int     iperf_get_mapped_v4(struct iperf_test* ipt);
 
 /* Setter routines for some fields inside iperf_test. */
 void	iperf_set_verbose( struct iperf_test* ipt, int verbose );
-void	iperf_set_control_socket( struct iperf_test* ipt, int ctrl_sck );
+void	iperf_set_control_socket( struct iperf_test* ipt, iperf_socket_t ctrl_sck );
 void	iperf_set_test_omit( struct iperf_test* ipt, int omit );
 void	iperf_set_test_duration( struct iperf_test* ipt, int duration );
 void	iperf_set_test_reporter_interval( struct iperf_test* ipt, double reporter_interval );
@@ -294,7 +303,7 @@ void      iperf_free_test(struct iperf_test * testp);
  * returns NULL on failure
  *
  */
-struct iperf_stream *iperf_new_stream(struct iperf_test *, int, int);
+struct iperf_stream *iperf_new_stream(struct iperf_test *, iperf_socket_t, int);
 
 /**
  * iperf_add_stream -- add a stream to a test
@@ -318,7 +327,7 @@ void      iperf_free_stream(struct iperf_stream * sp);
  * iperf_common_sockopts -- init stream socket with common socket options
  *
  */
-int       iperf_common_sockopts(struct iperf_test *, int s);
+int       iperf_common_sockopts(struct iperf_test *, iperf_socket_t s);
 
 #if defined (HAVE_TCP_KEEPALIVE)
 /**

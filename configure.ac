@@ -46,6 +46,19 @@ AC_CONFIG_HEADERS(src/iperf_config.h)
 
 AC_CANONICAL_HOST
 
+case "$host_os" in
+  mingw*) mingw_build=yes ;;
+  *) mingw_build=no ;;
+esac
+AM_CONDITIONAL([MINGW_BUILD], [test "x$mingw_build" = "xyes"])
+if test "x$mingw_build" = "xyes"; then
+  ac_cv_func_clock_nanosleep=no
+fi
+if test "x$mingw_build" = "xyes"; then
+  iperf_saved_CPPFLAGS="$CPPFLAGS"
+  CPPFLAGS="$CPPFLAGS -I$srcdir/src/win32 -D_WIN32_WINNT=0x0601 -D_CRT_RAND_S -DFD_SETSIZE=512"
+fi
+
 # Checks for tools: c compiler, ranlib (used for creating static libraries),
 # symlinks and libtool
 AC_PROG_CC
@@ -80,13 +93,13 @@ exit 1
 ])
 
 # On illumos we need -lsocket
-AC_SEARCH_LIBS(socket, [socket], [], [
+AC_SEARCH_LIBS(socket, [ws2_32 socket], [], [
 echo "socket()"
 exit 1
 ])
 
 # On illumos inet_ntop in in -lnsl
-AC_SEARCH_LIBS(inet_ntop, [nsl], [], [
+AC_SEARCH_LIBS(inet_ntop, [ws2_32 nsl], [], [
 echo "inet_ntop()"
 exit 1
 ])
@@ -455,6 +468,10 @@ AC_CHECK_FUNCS([nanosleep])
 AC_SEARCH_LIBS(clock_nanosleep, [rt posix4])
 # Check for clock_nanosleep support
 AC_CHECK_FUNCS([clock_nanosleep])
+
+if test "x$mingw_build" = "xyes"; then
+  CPPFLAGS="$iperf_saved_CPPFLAGS -D_WIN32_WINNT=0x0601 -D_CRT_RAND_S -DFD_SETSIZE=512"
+fi
 
 AC_CONFIG_FILES([Makefile src/Makefile src/version.h examples/Makefile iperf3.spec])
 AC_OUTPUT

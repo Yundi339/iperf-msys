@@ -1,3 +1,6 @@
+if MINGW_BUILD
+AM_CPPFLAGS = -I$(top_srcdir)/src/win32
+endif
 lib_LTLIBRARIES         = libiperf.la                                   # Build and install an iperf library
 bin_PROGRAMS            = iperf3                                        # Build and install an iperf binary
 if ENABLE_PROFILING
@@ -5,7 +8,7 @@ noinst_PROGRAMS         = t_timer t_units t_uuid t_api t_auth iperf3_profile   #
 else
 noinst_PROGRAMS         = t_timer t_units t_uuid t_api t_auth                  # Build, but don't install the test programs
 endif
-include_HEADERS         = iperf_api.h                                   # Defines the headers that get installed with the program
+include_HEADERS         = iperf_api.h iperf_socket.h                                   # Defines the headers that get installed with the program
 
 
 # Specify the source files and flags for the iperf library
@@ -35,6 +38,8 @@ libiperf_la_SOURCES     = \
                         iperf_time.h \
                         iperf_pthread.c \
                         iperf_pthread.h \
+                        iperf_socket.h \
+                        iperf_socket_internal.h \
 			dscp.c \
                         net.c \
                         net.h \
@@ -46,6 +51,10 @@ libiperf_la_SOURCES     = \
                         units.c \
                         units.h \
                         version.h
+
+if MINGW_BUILD
+libiperf_la_SOURCES += win32/iperf_win32.c win32/iperf_win32.h
+endif
 
 # Specify the sources and various flags for the iperf binary
 iperf3_SOURCES          = main.c
@@ -104,4 +113,5 @@ TESTS                   = \
 dist_man_MANS          = iperf3.1 libiperf.3
 
 install-exec-hook:
-	if test -n "$(LDCONFIG)"; then $(LDCONFIG) || true; fi
+	@ldconfig_cmd='$(LDCONFIG)'; \
+	if test -n "$$ldconfig_cmd"; then $$ldconfig_cmd || true; fi

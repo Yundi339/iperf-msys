@@ -176,7 +176,7 @@ iperf_udp_recv(struct iperf_stream *sp)
                     /* There's a gap so count that as a loss. */
 		    sp->cnt_error += (pcount - 1) - sp->packet_count;
                     if (test->debug_level >= DEBUG_LEVEL_INFO)
-                        fprintf(stderr, "LOST %" PRIu64 " PACKETS - received packet %" PRIu64 " but expected sequence %" PRIu64 " on stream %d\n", (pcount - sp->packet_count + 1), pcount, sp->packet_count + 1, sp->socket);
+                        fprintf(stderr, "LOST %" PRIu64 " PACKETS - received packet %" PRIu64 " but expected sequence %" PRIu64 " on stream %" IPERF_SOCKET_FORMAT "\n", (pcount - sp->packet_count + 1), pcount, sp->packet_count + 1, IPERF_SOCKET_FORMAT_ARG(sp->socket));
 		}
                 /* Update the highest sequence number seen so far. */
 		sp->packet_count = pcount;
@@ -199,7 +199,7 @@ iperf_udp_recv(struct iperf_stream *sp)
 
                 /* Log the out-of-order packet */
                 if (test->debug_level >= DEBUG_LEVEL_INFO)
-                    fprintf(stderr, "OUT OF ORDER - received packet %" PRIu64 " but expected sequence %" PRIu64 " on stream %d\n", pcount, sp->packet_count + 1, sp->socket);
+                    fprintf(stderr, "OUT OF ORDER - received packet %" PRIu64 " but expected sequence %" PRIu64 " on stream %" IPERF_SOCKET_FORMAT "\n", pcount, sp->packet_count + 1, IPERF_SOCKET_FORMAT_ARG(sp->socket));
 	    }
 
             /*
@@ -369,7 +369,7 @@ iperf_udp_send(struct iperf_stream *sp)
  * potentially too small to hold a message.
  */
 int
-iperf_udp_buffercheck(struct iperf_test *test, int s)
+iperf_udp_buffercheck(struct iperf_test *test, iperf_socket_t s)
 {
     int rc = 0;
     int sndbuf_actual, rcvbuf_actual;
@@ -458,7 +458,7 @@ iperf_udp_buffercheck(struct iperf_test *test, int s)
 
 #ifdef HAVE_UDP_SEGMENT
 int
-iperf_udp_gso(struct iperf_test *test, int s)
+iperf_udp_gso(struct iperf_test *test, iperf_socket_t s)
 {
     int rc;
     int gso = test->settings->gso_dg_size;
@@ -477,7 +477,7 @@ iperf_udp_gso(struct iperf_test *test, int s)
 }
 #else
 int
-iperf_udp_gso(struct iperf_test *test, int s)
+iperf_udp_gso(struct iperf_test *test, iperf_socket_t s)
 {
     /* GSO not supported on this platform */
     test->settings->gso = 0;
@@ -487,7 +487,7 @@ iperf_udp_gso(struct iperf_test *test, int s)
 
 #ifdef HAVE_UDP_GRO
 int
-iperf_udp_gro(struct iperf_test *test, int s)
+iperf_udp_gro(struct iperf_test *test, iperf_socket_t s)
 {
     int rc;
     int gro = 1;
@@ -506,7 +506,7 @@ iperf_udp_gro(struct iperf_test *test, int s)
 }
 #else
 int
-iperf_udp_gro(struct iperf_test *test, int s)
+iperf_udp_gro(struct iperf_test *test, iperf_socket_t s)
 {
     /* GRO not supported on this platform */
     test->settings->gro = 0;
@@ -519,13 +519,14 @@ iperf_udp_gro(struct iperf_test *test, int s)
  *
  * Accepts a new UDP "connection"
  */
-int
+iperf_socket_t
 iperf_udp_accept(struct iperf_test *test)
 {
     struct sockaddr_storage sa_peer;
     unsigned int buf;
     socklen_t len;
-    int       sz, s;
+    int       sz;
+    iperf_socket_t s;
     int	      rc;
 
     /*
@@ -622,7 +623,7 @@ iperf_udp_accept(struct iperf_test *test)
 
     /* Let the client know we're ready "accept" another UDP "stream" */
     buf = UDP_CONNECT_REPLY;
-    if (write(s, &buf, sizeof(buf)) < 0) {
+    if (send(s, (const char *)&buf, sizeof(buf), 0) < 0) {
         i_errno = IESTREAMWRITE;
         return -1;
     }
@@ -638,10 +639,10 @@ iperf_udp_accept(struct iperf_test *test)
  * there is no listen(2) for UDP.  This socket will however accept
  * a UDP datagram from a client (indicating the client's presence).
  */
-int
+iperf_socket_t
 iperf_udp_listen(struct iperf_test *test)
 {
-    int s;
+    iperf_socket_t s;
 
     if ((s = netannounce(test->settings->domain, Pudp, test->bind_address, test->bind_dev, test->server_port)) < 0) {
         i_errno = IESTREAMLISTEN;
@@ -660,10 +661,11 @@ iperf_udp_listen(struct iperf_test *test)
  *
  * "Connect" to a UDP stream listener.
  */
-int
+iperf_socket_t
 iperf_udp_connect(struct iperf_test *test)
 {
-    int s, sz;
+    iperf_socket_t s;
+    int sz;
     unsigned int buf;
 #ifdef SO_RCVTIMEO
     struct timeval tv;
@@ -748,9 +750,9 @@ iperf_udp_connect(struct iperf_test *test)
      */
     buf = UDP_CONNECT_MSG;
     if (test->debug) {
-        printf("Sending Connect message to Socket %d\n", s);
+        printf("Sending Connect message to Socket %" IPERF_SOCKET_FORMAT "\n", IPERF_SOCKET_FORMAT_ARG(s));
     }
-    if (write(s, &buf, sizeof(buf)) < 0) {
+    if (send(s, (const char *)&buf, sizeof(buf), 0) < 0) {
         // XXX: Should this be changed to IESTREAMCONNECT?
         i_errno = IESTREAMWRITE;
         return -1;
@@ -769,7 +771,7 @@ iperf_udp_connect(struct iperf_test *test)
             return -1;
         }
         if (test->debug) {
-            printf("Connect received for Socket %d, sz=%d, buf=%x, i=%d, max_len_wait_for_reply=%d\n", s, sz, buf, i, max_len_wait_for_reply);
+            printf("Connect received for Socket %" IPERF_SOCKET_FORMAT ", sz=%d, buf=%x, i=%d, max_len_wait_for_reply=%d\n", IPERF_SOCKET_FORMAT_ARG(s), sz, buf, i, max_len_wait_for_reply);
         }
         i += sz;
     } while (buf != UDP_CONNECT_REPLY && buf != LEGACY_UDP_CONNECT_REPLY && i < max_len_wait_for_reply);

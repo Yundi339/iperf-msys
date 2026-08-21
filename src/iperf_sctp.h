@@ -27,6 +27,8 @@
 #ifndef        IPERF_SCTP_H
 #define        IPERF_SCTP_H
 
+
+#include "iperf_socket.h"
 #ifdef HAVE_NETINET_SCTP_H
 #include <netinet/sctp.h>
 #endif /* HAVE_NETINET_SCTP_H */
@@ -38,7 +40,7 @@
  *returns 0 on success
  *
  */
-int iperf_sctp_accept(struct iperf_test *);
+iperf_socket_t iperf_sctp_accept(struct iperf_test *);
 
 /**
  * iperf_sctp_recv -- receives the data for sctp
@@ -58,16 +60,16 @@ int iperf_sctp_recv(struct iperf_stream *);
 int iperf_sctp_send(struct iperf_stream *);
 
 
-int iperf_sctp_listen(struct iperf_test *);
+iperf_socket_t iperf_sctp_listen(struct iperf_test *);
 
-int iperf_sctp_connect(struct iperf_test *);
+iperf_socket_t iperf_sctp_connect(struct iperf_test *);
 
 int iperf_sctp_init(struct iperf_test *test);
 
 #define IPERF_SCTP_CLIENT 0
 #define IPERF_SCTP_SERVER 1
 
-int iperf_sctp_bindx(struct iperf_test *test, int s, int is_server);
+int iperf_sctp_bindx(struct iperf_test *test, iperf_socket_t s, int is_server);
 
 int iperf_sctp_get_info(struct iperf_stream *sp, struct iperf_sctp_info *sctp_info);
 

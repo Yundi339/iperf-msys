@@ -53,6 +53,9 @@
 #include "iperf_tcp.h"
 #include "iperf_util.h"
 #include "timer.h"
+#ifdef _WIN32
+#include "win32/iperf_win32.h"
+#endif
 #include "iperf_time.h"
 #include "net.h"
 #include "units.h"
@@ -70,6 +73,7 @@ iperf_server_worker_run(void *s) {
     struct iperf_stream *sp = (struct iperf_stream *) s;
     struct iperf_test *test = sp->test;
 
+#ifndef _WIN32
     /* Blocking signal to make sure that signal will be handled by main thread */
     sigset_t set;
     sigemptyset(&set);
@@ -86,6 +90,7 @@ iperf_server_worker_run(void *s) {
 	    i_errno = IEPTHREADSIGMASK;
 	    goto cleanup_and_fail;
     }
+#endif
 
     /* Allow this thread to be cancelled even if it's in a syscall */
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
@@ -98,6 +103,18 @@ iperf_server_worker_run(void *s) {
             }
         }
         else {
+#ifdef _WIN32
+            if (test->protocol->id == Pudp) {
+                int ready = iperf_win32_wait_readable((SOCKET) sp->socket, 100U);
+                if (ready < 0) {
+                    if (errno == EINTR)
+                        continue;
+                    goto cleanup_and_fail;
+                }
+                if (ready == 0)
+                    continue;
+            }
+#endif
             if (iperf_recv_mt(sp) < 0) {
                 goto cleanup_and_fail;
             }
@@ -152,7 +169,7 @@ iperf_server_listen(struct iperf_test *test)
 int
 iperf_accept(struct iperf_test *test)
 {
-    int s;
+    iperf_socket_t s;
     int ret = -1;
     signed char rbuf = ACCESS_DENIED;
     socklen_t len;
@@ -226,13 +243,56 @@ iperf_accept(struct iperf_test *test)
             if (test->debug)
                 printf("successfully sent ACCESS_DENIED to an unsolicited connection request during active test\n");
         }
-        close(s);
+        IPERF_SOCKET_CLOSE(s);
     }
     return 0;
     error_handling:
         return ret;
 }
 
+
+#ifdef _WIN32
+static void
+iperf_win32_stop_server_workers(struct iperf_test *test)
+{
+    struct iperf_stream *sp;
+    int saved_i_errno = i_errno;
+
+    test->done = 1;
+    SLIST_FOREACH(sp, &test->streams, streams) {
+        sp->done = 1;
+        if (sp->socket != IPERF_INVALID_SOCKET)
+            (void) shutdown((SOCKET) sp->socket, SD_BOTH);
+    }
+    SLIST_FOREACH(sp, &test->streams, streams) {
+        int rc;
+        if (sp->thread_created != 1)
+            continue;
+        #ifdef _WIN32
+        (void) iperf_win32_cancel_thread_io(sp->thr);
+        #endif
+        rc = pthread_cancel(sp->thr);
+        if (rc != 0 && rc != ESRCH) {
+            i_errno = IEPTHREADCANCEL;
+            errno = rc;
+            iperf_err(test, "Windows worker cancel - %s", iperf_strerror(i_errno));
+        }
+    }
+    SLIST_FOREACH(sp, &test->streams, streams) {
+        int rc;
+        if (sp->thread_created != 1)
+            continue;
+        rc = pthread_join(sp->thr, NULL);
+        if (rc != 0 && rc != ESRCH) {
+            i_errno = IEPTHREADJOIN;
+            errno = rc;
+            iperf_err(test, "Windows worker join - %s", iperf_strerror(i_errno));
+        }
+        sp->thread_created = 0;
+    }
+    i_errno = saved_i_errno;
+}
+#endif
 
 /**************************************************************************/
 int
@@ -269,12 +329,20 @@ iperf_handle_message_server(struct iperf_test *test)
             test->done = 1;
             cpu_util(test->cpu_util);
             test->stats_callback(test);
+#ifdef _WIN32
+            iperf_win32_stop_server_workers(test);
+#endif
             SLIST_FOREACH(sp, &test->streams, streams) {
                 FD_CLR(sp->socket, &test->read_set);
                 FD_CLR(sp->socket, &test->write_set);
-                close(sp->socket);
+                IPERF_SOCKET_CLOSE(sp->socket);
             }
             test->reporter_callback(test);
+#ifdef _WIN32
+            SLIST_FOREACH(sp, &test->streams, streams) {
+                sp->socket = IPERF_INVALID_SOCKET;
+            }
+#endif
             if (iperf_set_send_state(test, EXCHANGE_RESULTS) != 0)
                 return -1;
             if (iperf_exchange_results(test) < 0)
@@ -296,14 +364,22 @@ iperf_handle_message_server(struct iperf_test *test)
 	    test->state = DISPLAY_RESULTS;
 	    test->reporter_callback(test);
 	    test->state = oldstate;
+#ifdef _WIN32
+            iperf_win32_stop_server_workers(test);
+#endif
 
             // XXX: Remove this line below!
 	    iperf_err(test, "the client has terminated");
             SLIST_FOREACH(sp, &test->streams, streams) {
                 FD_CLR(sp->socket, &test->read_set);
                 FD_CLR(sp->socket, &test->write_set);
-                close(sp->socket);
+                IPERF_SOCKET_CLOSE(sp->socket);
             }
+#ifdef _WIN32
+            SLIST_FOREACH(sp, &test->streams, streams) {
+                sp->socket = IPERF_INVALID_SOCKET;
+            }
+#endif
             iperf_set_test_state(test, IPERF_DONE);
             break;
         default:
@@ -325,6 +401,9 @@ server_timer_proc(TimerClientData client_data, struct iperf_time *nowP)
     if (test->done)
         return;
     test->done = 1;
+#ifdef _WIN32
+    iperf_win32_stop_server_workers(test);
+#endif
     iperf_err(test, "error - server test duration expired - test is terminated by the server");
     if (iperf_set_send_state(test, SERVER_ERROR) == 0) {
         i_errno = IESERVERTESTDURATIONEXPIRED;
@@ -339,12 +418,12 @@ server_timer_proc(TimerClientData client_data, struct iperf_time *nowP)
         sp = SLIST_FIRST(&test->streams);
         if (sp->socket != -1) {
             SLIST_REMOVE_HEAD(&test->streams, streams);
-            close(sp->socket);
+            IPERF_SOCKET_CLOSE(sp->socket);
             sp->socket = -1;
             iperf_free_stream(sp);
         }
     }
-    close(test->ctrl_sck);
+    IPERF_SOCKET_CLOSE(test->ctrl_sck);
     test->ctrl_sck = -1;
 }
 
@@ -478,7 +557,14 @@ cleanup_server(struct iperf_test *test)
     SLIST_FOREACH(sp, &test->streams, streams) {
         int rc;
         sp->done = 1;
+#ifdef _WIN32
+        if (sp->socket != IPERF_INVALID_SOCKET)
+            (void) shutdown((SOCKET) sp->socket, SD_BOTH);
+#endif
         if (sp->thread_created == 1) {
+            #ifdef _WIN32
+            (void) iperf_win32_cancel_thread_io(sp->thr);
+            #endif
             rc = pthread_cancel(sp->thr);
             if (rc != 0 && rc != ESRCH) {
                 i_errno = IEPTHREADCANCEL;
@@ -492,7 +578,7 @@ cleanup_server(struct iperf_test *test)
                 iperf_err(test, "cleanup_server in pthread_join - %s", iperf_strerror(i_errno));
             }
             if (test->debug_level >= DEBUG_LEVEL_INFO) {
-                iperf_printf(test, "Thread FD %d stopped\n", sp->socket);
+                iperf_printf(test, "Thread FD %" IPERF_SOCKET_FORMAT " stopped\n", IPERF_SOCKET_FORMAT_ARG(sp->socket));
             }
             sp->thread_created = 0;
         }
@@ -508,7 +594,7 @@ cleanup_server(struct iperf_test *test)
 	if (sp->socket > -1) {
             FD_CLR(sp->socket, &test->read_set);
             FD_CLR(sp->socket, &test->write_set);
-            close(sp->socket);
+            IPERF_SOCKET_CLOSE(sp->socket);
             sp->socket = -1;
 	}
     }
@@ -520,11 +606,11 @@ cleanup_server(struct iperf_test *test)
         test->ctrl_sck = -1;
     }
     if (test->listener > -1) {
-	close(test->listener);
+	IPERF_SOCKET_CLOSE(test->listener);
         test->listener = -1;
     }
     if (test->prot_listener > -1) {     // May remain open if create socket failed
-	close(test->prot_listener);
+	IPERF_SOCKET_CLOSE(test->prot_listener);
         test->prot_listener = -1;
     }
 
@@ -555,7 +641,8 @@ cleanup_server(struct iperf_test *test)
 int
 iperf_run_server(struct iperf_test *test)
 {
-    int result, s;
+    int result;
+    iperf_socket_t s;
     int send_streams_accepted, rec_streams_accepted;
     int streams_to_send = 0, streams_to_rec = 0;
 #if defined(HAVE_TCP_CONGESTION)
@@ -771,7 +858,7 @@ iperf_run_server(struct iperf_test *test)
             if (test->state == CREATE_STREAMS) {
                 if (FD_ISSET(test->prot_listener, &read_set)) {
 
-                    if ((s = test->protocol->accept(test)) < 0) {
+                    if ((s = test->protocol->accept_fn(test)) < 0) {
 			cleanup_server(test);
                         return -1;
 		    }
@@ -791,7 +878,7 @@ iperf_run_server(struct iperf_test *test)
                         if ((opt = test->settings->snd_timeout)) {
                             if (setsockopt(s, IPPROTO_TCP, TCP_USER_TIMEOUT, &opt, sizeof(opt)) < 0) {
                                 saved_errno = errno;
-                                close(s);
+                                IPERF_SOCKET_CLOSE(s);
                                 cleanup_server(test);
                                 errno = saved_errno;
                                 i_errno = IESETUSERTIMEOUT;
@@ -819,7 +906,7 @@ iperf_run_server(struct iperf_test *test)
 				}
 				else {
 				    saved_errno = errno;
-				    close(s);
+				    IPERF_SOCKET_CLOSE(s);
 				    cleanup_server(test);
 				    errno = saved_errno;
 				    i_errno = IESETCONGESTION;
@@ -834,7 +921,7 @@ iperf_run_server(struct iperf_test *test)
 			    rc = getsockopt(s, IPPROTO_TCP, TCP_CONGESTION, ca, &len);
                             if (rc < 0 && test->congestion) {
 				saved_errno = errno;
-				close(s);
+				IPERF_SOCKET_CLOSE(s);
 				cleanup_server(test);
 				errno = saved_errno;
 				i_errno = IESETCONGESTION;
@@ -891,12 +978,12 @@ iperf_run_server(struct iperf_test *test)
                 if (rec_streams_accepted == streams_to_rec && send_streams_accepted == streams_to_send) {
                     if (test->protocol->id != Ptcp) {
                         FD_CLR(test->prot_listener, &test->read_set);
-                        close(test->prot_listener);
+                        IPERF_SOCKET_CLOSE(test->prot_listener);
                         test->prot_listener = -1;
                     } else {
                         if (test->no_delay || test->settings->mss || test->settings->socket_bufsize) {
                             FD_CLR(test->listener, &test->read_set);
-                            close(test->listener);
+                            IPERF_SOCKET_CLOSE(test->listener);
 			    test->listener = -1;
                             if ((s = netannounce(test->settings->domain, Ptcp, test->bind_address, test->bind_dev, test->server_port)) < 0) {
 				cleanup_server(test);
@@ -965,7 +1052,7 @@ iperf_run_server(struct iperf_test *test)
                         }
                         sp->thread_created = 1;
                         if (test->debug_level >= DEBUG_LEVEL_INFO) {
-                            iperf_printf(test, "Thread FD %d created\n", sp->socket);
+                            iperf_printf(test, "Thread FD %" IPERF_SOCKET_FORMAT " created\n", IPERF_SOCKET_FORMAT_ARG(sp->socket));
                         }
                     }
                     if (test->debug_level >= DEBUG_LEVEL_INFO) {

@@ -72,6 +72,9 @@
 #include <Windows.h>
 #endif /* HAVE_SETPROCESSAFFINITYMASK */
 
+#ifdef _WIN32
+#include "win32/iperf_win32.h"
+#endif
 #include "net.h"
 #include "iperf.h"
 #include "iperf_api.h"
@@ -101,9 +104,9 @@ static int send_results(struct iperf_test *test);
 static int get_results(struct iperf_test *test);
 static int diskfile_send(struct iperf_stream *sp);
 static int diskfile_recv(struct iperf_stream *sp);
-static int JSON_write(int fd, cJSON *json);
+static int JSON_write(iperf_socket_t fd, cJSON *json);
 static void print_interval_results(struct iperf_test *test, struct iperf_stream *sp, cJSON *json_interval_streams);
-static cJSON *JSON_read(int fd, int max_size);
+static cJSON *JSON_read(iperf_socket_t fd, int max_size);
 static int JSONStream_Output(struct iperf_test *test, const char* event_name, cJSON* obj);
 
 
@@ -137,7 +140,7 @@ iperf_get_verbose(struct iperf_test *ipt)
     return ipt->verbose;
 }
 
-int
+iperf_socket_t
 iperf_get_control_socket(struct iperf_test *ipt)
 {
     return ipt->ctrl_sck;
@@ -453,7 +456,7 @@ iperf_set_verbose(struct iperf_test *ipt, int verbose)
 }
 
 void
-iperf_set_control_socket(struct iperf_test *ipt, int ctrl_sck)
+iperf_set_control_socket(struct iperf_test *ipt, iperf_socket_t ctrl_sck)
 {
     ipt->ctrl_sck = ctrl_sck;
 }
@@ -2380,7 +2383,7 @@ iperf_exchange_parameters(struct iperf_test *test)
         }
 #endif //HAVE_SSL
 
-        if ((s = test->protocol->listen(test)) < 0) {
+        if ((s = test->protocol->listen_fn(test)) < 0) {
             return -1;
         }
 
@@ -3168,7 +3171,7 @@ get_results(struct iperf_test *test)
 /*************************************************************/
 
 static int
-JSON_write(int fd, cJSON *json)
+JSON_write(iperf_socket_t fd, cJSON *json)
 {
     uint32_t hsize, nsize;
     char *str;
@@ -3194,7 +3197,7 @@ JSON_write(int fd, cJSON *json)
 /*************************************************************/
 
 static cJSON *
-JSON_read(int fd, int max_size)
+JSON_read(iperf_socket_t fd, int max_size)
 {
     uint32_t hsize, nsize;
     size_t strsize;
@@ -3343,7 +3346,7 @@ connect_msg(struct iperf_stream *sp)
     if (sp->test->json_output)
         cJSON_AddItemToArray(sp->test->json_connected, iperf_json_printf("socket: %d  local_host: %s  local_port: %d  remote_host: %s  remote_port: %d", (int64_t) sp->socket, ipl, (int64_t) lport, ipr, (int64_t) rport));
     else
-	iperf_printf(sp->test, report_connected, sp->socket, ipl, lport, ipr, rport);
+	iperf_printf(sp->test, report_connected, IPERF_SOCKET_FORMAT_ARG(sp->socket), ipl, lport, ipr, rport);
 }
 
 
@@ -3352,6 +3355,12 @@ connect_msg(struct iperf_stream *sp)
 struct iperf_test *
 iperf_new_test()
 {
+#ifdef _WIN32
+    if (iperf_win32_init() < 0) {
+        i_errno = IENEWTEST;
+        return NULL;
+    }
+#endif
     struct iperf_test *test;
     int rc;
 
@@ -3505,9 +3514,9 @@ iperf_defaults(struct iperf_test *testp)
 
     tcp->id = Ptcp;
     tcp->name = "TCP";
-    tcp->accept = iperf_tcp_accept;
-    tcp->listen = iperf_tcp_listen;
-    tcp->connect = iperf_tcp_connect;
+    tcp->accept_fn = iperf_tcp_accept;
+    tcp->listen_fn = iperf_tcp_listen;
+    tcp->connect_fn = iperf_tcp_connect;
     tcp->send = iperf_tcp_send;
     tcp->recv = iperf_tcp_recv;
     tcp->init = NULL;
@@ -3521,9 +3530,9 @@ iperf_defaults(struct iperf_test *testp)
 
     udp->id = Pudp;
     udp->name = "UDP";
-    udp->accept = iperf_udp_accept;
-    udp->listen = iperf_udp_listen;
-    udp->connect = iperf_udp_connect;
+    udp->accept_fn = iperf_udp_accept;
+    udp->listen_fn = iperf_udp_listen;
+    udp->connect_fn = iperf_udp_connect;
     udp->send = iperf_udp_send;
     udp->recv = iperf_udp_recv;
     udp->init = iperf_udp_init;
@@ -3541,9 +3550,9 @@ iperf_defaults(struct iperf_test *testp)
 
     sctp->id = Psctp;
     sctp->name = "SCTP";
-    sctp->accept = iperf_sctp_accept;
-    sctp->listen = iperf_sctp_listen;
-    sctp->connect = iperf_sctp_connect;
+    sctp->accept_fn = iperf_sctp_accept;
+    sctp->listen_fn = iperf_sctp_listen;
+    sctp->connect_fn = iperf_sctp_connect;
     sctp->send = iperf_sctp_send;
     sctp->recv = iperf_sctp_recv;
     sctp->init = iperf_sctp_init;
@@ -4444,7 +4453,7 @@ iperf_print_results(struct iperf_test *test)
                                     iperf_printf(test, report_sender_not_available_format, sp->socket);
                             }
                             else {
-                                iperf_printf(test, report_bw_retrans_format, sp->socket, mbuf, start_time, sender_time, ubuf, nbuf, sp->result->stream_retrans, report_sender);
+                                iperf_printf(test, report_bw_retrans_format, IPERF_SOCKET_FORMAT_ARG(sp->socket), mbuf, start_time, sender_time, ubuf, nbuf, sp->result->stream_retrans, report_sender);
                             }
                     } else {
                         /* Sender summary, TCP and SCTP without retransmits. */
@@ -4456,7 +4465,7 @@ iperf_print_results(struct iperf_test *test)
                                     iperf_printf(test, report_sender_not_available_format, sp->socket);
                             }
                             else {
-                                iperf_printf(test, report_bw_format, sp->socket, mbuf, start_time, sender_time, ubuf, nbuf, report_sender);
+                                iperf_printf(test, report_bw_format, IPERF_SOCKET_FORMAT_ARG(sp->socket), mbuf, start_time, sender_time, ubuf, nbuf, report_sender);
                             }
                     }
                 } else {
@@ -4547,7 +4556,7 @@ iperf_print_results(struct iperf_test *test)
                                 iperf_printf(test, report_receiver_not_available_format, sp->socket);
                         }
                         else {
-                            iperf_printf(test, report_bw_format, sp->socket, mbuf, start_time, receiver_time, ubuf, nbuf, report_receiver);
+                            iperf_printf(test, report_bw_format, IPERF_SOCKET_FORMAT_ARG(sp->socket), mbuf, start_time, receiver_time, ubuf, nbuf, report_receiver);
                         }
                 }
                 else {
@@ -4899,14 +4908,14 @@ print_interval_results(struct iperf_test *test, struct iperf_stream *sp, cJSON *
 		cJSON_AddItemToArray(json_interval_streams, iperf_json_printf("socket: %d  start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  retransmits: %d  snd_cwnd:  %d  snd_wnd:  %d  rtt:  %d  rttvar: %d  pmtu: %d  reorder: %d  omitted: %b sender: %b", (int64_t) sp->socket, (double) st, (double) et, (double) irp->interval_duration, (int64_t) irp->bytes_transferred, bandwidth * 8, (int64_t) irp->interval_retrans, (int64_t) irp->snd_cwnd, (int64_t) irp->snd_wnd, (int64_t) irp->rtt, (int64_t) irp->rttvar, (int64_t) irp->pmtu, (int64_t) irp->reorder, irp->omitted, sp->sender));
 	    else {
 		unit_snprintf(cbuf, UNIT_LEN, irp->snd_cwnd, 'A');
-		iperf_printf(test, report_bw_retrans_cwnd_format, sp->socket, mbuf, st, et, ubuf, nbuf, irp->interval_retrans, cbuf, irp->omitted?report_omitted:"");
+		iperf_printf(test, report_bw_retrans_cwnd_format, IPERF_SOCKET_FORMAT_ARG(sp->socket), mbuf, st, et, ubuf, nbuf, irp->interval_retrans, cbuf, irp->omitted?report_omitted:"");
 	    }
 	} else {
 	    /* Interval, TCP without retransmits. */
 	    if (test->json_output)
 		cJSON_AddItemToArray(json_interval_streams, iperf_json_printf("socket: %d  start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  omitted: %b sender: %b", (int64_t) sp->socket, (double) st, (double) et, (double) irp->interval_duration, (int64_t) irp->bytes_transferred, bandwidth * 8, irp->omitted, sp->sender));
 	    else
-		iperf_printf(test, report_bw_format, sp->socket, mbuf, st, et, ubuf, nbuf, irp->omitted?report_omitted:"");
+		iperf_printf(test, report_bw_format, IPERF_SOCKET_FORMAT_ARG(sp->socket), mbuf, st, et, ubuf, nbuf, irp->omitted?report_omitted:"");
 	}
     } else {
 	/* Interval, UDP. */
@@ -4940,7 +4949,12 @@ iperf_free_stream(struct iperf_stream *sp)
     struct iperf_interval_results *irp, *nirp;
 
     /* XXX: need to free interval list too! */
+#ifdef _WIN32
+#define IPERF_WIN32_MEMORY_BUFFER 1
+    free(sp->buffer);
+#else
     munmap(sp->buffer, sp->test->settings->blksize);
+#endif
     if (sp->buffer_fd >= 0) {
         close(sp->buffer_fd);
         sp->buffer_fd = -1;
@@ -4959,7 +4973,7 @@ iperf_free_stream(struct iperf_stream *sp)
 
 /**************************************************************************/
 struct iperf_stream *
-iperf_new_stream(struct iperf_test *test, int s, int sender)
+iperf_new_stream(struct iperf_test *test, iperf_socket_t s, int sender)
 {
     struct iperf_stream *sp;
     int ret = 0;
@@ -5008,6 +5022,21 @@ iperf_new_stream(struct iperf_test *test, int s, int sender)
     TAILQ_INIT(&sp->result->interval_results);
 
     /* Create and randomize the buffer */
+    size = test->settings->blksize;
+    if (test->protocol->id == Pudp && test->settings->gso && (size < test->settings->gso_bf_size))
+        size = test->settings->gso_bf_size;
+    if (test->protocol->id == Pudp && test->settings->gro && (size < test->settings->gro_bf_size))
+        size = test->settings->gro_bf_size;
+    if (sp->test->debug)
+        printf("Buffer %d bytes\n", size);
+#ifdef _WIN32
+    sp->buffer_fd = -1;
+    sp->buffer = (char *) malloc(size);
+    if (sp->buffer == NULL) {
+        i_errno = IECREATESTREAM;
+        goto err_exit_free_result;
+    }
+#else
     sp->buffer_fd = mkstemp(template);
     if (sp->buffer_fd == -1) {
         i_errno = IECREATESTREAM;
@@ -5017,13 +5046,6 @@ iperf_new_stream(struct iperf_test *test, int s, int sender)
         i_errno = IECREATESTREAM;
         goto err_exit_close_buffer;
     }
-    size = test->settings->blksize;
-    if (test->protocol->id == Pudp && test->settings->gso && (size < test->settings->gso_bf_size))
-        size = test->settings->gso_bf_size;
-    if (test->protocol->id == Pudp && test->settings->gro && (size < test->settings->gro_bf_size))
-        size = test->settings->gro_bf_size;
-    if (sp->test->debug)
-        printf("Buffer %d bytes\n", size);
     if (ftruncate(sp->buffer_fd, size) < 0) {
         i_errno = IECREATESTREAM;
         goto err_exit_close_buffer;
@@ -5033,8 +5055,8 @@ iperf_new_stream(struct iperf_test *test, int s, int sender)
         i_errno = IECREATESTREAM;
         goto err_exit_close_buffer;
     }
+#endif
     sp->pending_size = 0;
-
     /* Set socket */
     sp->socket = s;
 
@@ -5073,9 +5095,14 @@ err_exit_close_diskfile:
         close(sp->diskfile_fd);
     }
 err_exit_munmap_buffer:
+#ifdef _WIN32
+    free(sp->buffer);
+#else
     munmap(sp->buffer, sp->test->settings->blksize);
+#endif
 err_exit_close_buffer:
-    close(sp->buffer_fd);
+    if (sp->buffer_fd >= 0)
+        close(sp->buffer_fd);
 err_exit_free_result:
     free(sp->result);
 err_exit_free_sp:
@@ -5086,7 +5113,7 @@ err_exit:
 
 /**************************************************************************/
 int
-iperf_common_sockopts(struct iperf_test *test, int s)
+iperf_common_sockopts(struct iperf_test *test, iperf_socket_t s)
 {
     int opt;
 
@@ -5389,10 +5416,10 @@ iperf_create_pidfile(struct iperf_test *test)
 #if (defined(_WRS_KERNEL)) && (defined(_WRS_CONFIG_LP64))
 			if (kill((_Vx_TASK_ID)pid, 0) == 0) {
 #else
-			if (kill(pid, 0) == 0) {
+			if (kill(pid, 0) == 0 || errno == EPERM) {
 #endif // _WRS_KERNEL and _WRS_CONFIG_LP64
 #else
-		    if (kill(pid, 0) == 0) {
+		    if (kill(pid, 0) == 0 || errno == EPERM) {
 #endif // __vxworks or __VXWORKS__
 			/*
 			 * Make sure not to try to delete existing PID file by
@@ -5575,7 +5602,12 @@ iperf_setaffinity(struct iperf_test *test, int affinity)
     return 0;
 #elif defined(HAVE_SETPROCESSAFFINITYMASK)
 	HANDLE process = GetCurrentProcess();
-	DWORD_PTR processAffinityMask = 1 << affinity;
+	if (affinity < 0 || affinity >= (int)(sizeof(DWORD_PTR) * 8)) {
+		errno = EINVAL;
+		i_errno = IEAFFINITY;
+		return -1;
+	}
+	DWORD_PTR processAffinityMask = ((DWORD_PTR)1) << affinity;
 
 	if (SetProcessAffinityMask(process, processAffinityMask) == 0) {
 		i_errno = IEAFFINITY;

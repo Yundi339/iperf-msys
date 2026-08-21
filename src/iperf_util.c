@@ -62,6 +62,22 @@ int readentropy(void *out, size_t outsize)
     int is_eof = 0;
 
     if (!outsize) return 0;
+#ifdef _WIN32
+    {
+        unsigned char *p = (unsigned char *)out;
+        while (outsize > 0) {
+            unsigned int value;
+            size_t n;
+            if (rand_s(&value) != 0)
+                iperf_errexit(NULL, "error - failed to obtain random data\n");
+            n = outsize < sizeof(value) ? outsize : sizeof(value);
+            memcpy(p, &value, n);
+            p += n;
+            outsize -= n;
+        }
+        return 0;
+    }
+#endif
 
     frandom = fopen(rndfile, "rb");
     if (frandom == NULL) {
@@ -505,6 +521,12 @@ iperf_dump_fdset(FILE *fp, const char *str, int nfds, fd_set *fds)
 #ifndef HAVE_DAEMON
 int daemon(int nochdir, int noclose)
 {
+#ifdef _WIN32
+    (void)nochdir;
+    (void)noclose;
+    errno = ENOSYS;
+    return -1;
+#else
     pid_t pid = 0;
     pid_t sid = 0;
     int fd;
@@ -558,6 +580,7 @@ int daemon(int nochdir, int noclose)
 	}
     }
     return (0);
+#endif /* !_WIN32 */
 }
 #endif /* HAVE_DAEMON */
 

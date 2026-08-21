@@ -27,24 +27,26 @@
 #ifndef __NET_H
 #define __NET_H
 
-int timeout_connect(int s, const struct sockaddr *name, socklen_t namelen, int timeout);
-int create_socket(int domain, int type, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, struct addrinfo **server_res_out);
-int netdial(int domain, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, int timeout);
-int netannounce(int domain, int proto, const char *local, const char *bind_dev, int port);
-int Nread(int fd, char *buf, size_t count, int prot);
-int Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt);
-int Nread_no_select(int fd, char *buf, size_t count, int prot);
-int Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt);
-int Nread_gro(int fd, char *buf, size_t count, int prot, int *dgram_sz);
-int Nwrite(int fd, const char *buf, size_t count, int prot) /* __attribute__((hot)) */;
-int Nwrite_gso(int fd, const char *buf, size_t count, int prot, uint16_t gso_size);
+#include "iperf_socket.h"
+
+int timeout_connect(iperf_socket_t s, const struct sockaddr *name, socklen_t namelen, int timeout);
+iperf_socket_t create_socket(int domain, int type, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, struct addrinfo **server_res_out);
+iperf_socket_t netdial(int domain, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, int timeout);
+iperf_socket_t netannounce(int domain, int proto, const char *local, const char *bind_dev, int port);
+int Nread(iperf_socket_t fd, char *buf, size_t count, int prot);
+int Nrecv(iperf_socket_t fd, char *buf, size_t count, int prot, int sock_opt);
+int Nread_no_select(iperf_socket_t fd, char *buf, size_t count, int prot);
+int Nrecv_no_select(iperf_socket_t fd, char *buf, size_t count, int prot, int sock_opt);
+int Nread_gro(iperf_socket_t fd, char *buf, size_t count, int prot, int *dgram_sz);
+int Nwrite(iperf_socket_t fd, const char *buf, size_t count, int prot) /* __attribute__((hot)) */;
+int Nwrite_gso(iperf_socket_t fd, const char *buf, size_t count, int prot, uint16_t gso_size);
 int has_sendfile(void);
-int Nsendfile(int fromfd, int tofd, const char *buf, size_t count) /* __attribute__((hot)) */;
-int setnonblocking(int fd, int nonblocking);
-int getsockdomain(int sock);
+int Nsendfile(int fromfd, iperf_socket_t tofd, const char *buf, size_t count) /* __attribute__((hot)) */;
+int setnonblocking(iperf_socket_t fd, int nonblocking);
+int getsockdomain(iperf_socket_t sock);
 int parse_qos(const char *tos);
-int bind_to_device(int s, int domain, const char *bind_dev);
-void iperf_sync_close_socket(int sock);
+int bind_to_device(iperf_socket_t s, int domain, const char *bind_dev);
+void iperf_sync_close_socket(iperf_socket_t sock);
 
 #define NET_SOFTERROR -1
 #define NET_HARDERROR -2

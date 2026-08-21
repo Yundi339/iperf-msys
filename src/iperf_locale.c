@@ -80,6 +80,7 @@
 #include "iperf_config.h"
 
 #include "version.h"
+#include "iperf_socket.h"
 
 #include <inttypes.h>
 
@@ -342,7 +343,7 @@ const char report_cookie[] =
 "      Cookie: %s\n";
 
 const char report_connected[] =
-"[%3d] local %s port %d connected to %s port %d\n";
+"[%3" IPERF_SOCKET_FORMAT "] local %s port %d connected to %s port %d\n";
 
 const char report_window[] =
 "TCP window size: %s\n";
@@ -360,10 +361,10 @@ const char report_done[] =
 "iperf Done.\n";
 
 const char report_read_lengths[] =
-"[%3d] Read lengths occurring in more than 5%% of reads:\n";
+"[%3" IPERF_SOCKET_FORMAT "] Read lengths occurring in more than 5%% of reads:\n";
 
 const char report_read_length_times[] =
-"[%3d] %5d bytes read %5d times (%.3g%%)\n";
+"[%3" IPERF_SOCKET_FORMAT "] %5d bytes read %5d times (%.3g%%)\n";
 
 const char report_bw_header[] =
 "[ ID] Interval           Transfer     Bitrate\n";
@@ -396,13 +397,13 @@ const char report_bw_udp_sender_header_bidir[] =
 "[ ID][Role] Interval           Transfer     Bitrate         Total Datagrams\n";
 
 const char report_bw_format[] =
-"[%3d]%s %6.2f-%-6.2f sec  %ss  %ss/sec                  %s\n";
+"[%3" IPERF_SOCKET_FORMAT "]%s %6.2f-%-6.2f sec  %ss  %ss/sec                  %s\n";
 
 const char report_bw_retrans_format[] =
-"[%3d]%s %6.2f-%-6.2f sec  %ss  %ss/sec  %3ld            %s\n";
+"[%3" IPERF_SOCKET_FORMAT "]%s %6.2f-%-6.2f sec  %ss  %ss/sec  %3ld            %s\n";
 
 const char report_bw_retrans_cwnd_format[] =
-"[%3d]%s %6.2f-%-6.2f sec  %ss  %ss/sec  %3ld   %ss       %s\n";
+"[%3" IPERF_SOCKET_FORMAT "]%s %6.2f-%-6.2f sec  %ss  %ss/sec  %3ld   %ss       %s\n";
 
 const char report_bw_udp_format[] =
 "[%3d]%s %6.2f-%-6.2f sec  %ss  %ss/sec  %5.3f ms  %" PRId64 "/%" PRId64 " (%.2g%%)  %s\n";
@@ -434,28 +435,28 @@ const char report_bw_separator[] =
 "- - - - - - - - - - - - - - - - - - - - - - - - -\n";
 
 const char report_outoforder[] =
-"[%3d]%s %4.1f-%4.1f sec  %d datagrams received out-of-order\n";
+"[%3" IPERF_SOCKET_FORMAT "]%s %4.1f-%4.1f sec  %d datagrams received out-of-order\n";
 
 const char report_sum_outoforder[] =
 "[SUM]%s %4.1f-%4.1f sec  %"PRIu64" datagrams received out-of-order\n";
 
 const char report_peer[] =
-"[%3d] local %s port %u connected with %s port %u\n";
+"[%3" IPERF_SOCKET_FORMAT "] local %s port %u connected with %s port %u\n";
 
 const char report_mss_unsupported[] =
-"[%3d] MSS and MTU size unknown (TCP_MAXSEG not supported by OS?)\n";
+"[%3" IPERF_SOCKET_FORMAT "] MSS and MTU size unknown (TCP_MAXSEG not supported by OS?)\n";
 
 const char report_mss[] =
-"[%3d] MSS size %d bytes (MTU %d bytes, %s)\n";
+"[%3" IPERF_SOCKET_FORMAT "] MSS size %d bytes (MTU %d bytes, %s)\n";
 
 const char report_datagrams[] =
-"[%3d] Sent %d datagrams\n";
+"[%3" IPERF_SOCKET_FORMAT "] Sent %d datagrams\n";
 
 const char report_sum_datagrams[] =
 "[SUM] Sent %d datagrams\n";
 
 const char server_reporting[] =
-"[%3d] Server Report:\n";
+"[%3" IPERF_SOCKET_FORMAT "] Server Report:\n";
 
 const char reportCSV_peer[] =
 "%s,%u,%s,%u";
@@ -529,10 +530,10 @@ const char warn_no_pathmtu[] =
 "WARNING: Path MTU Discovery may not be enabled.\n";
 
 const char warn_no_ack[]=
-"[%3d] WARNING: did not receive ack of last datagram after %d tries.\n";
+"[%3" IPERF_SOCKET_FORMAT "] WARNING: did not receive ack of last datagram after %d tries.\n";
 
 const char warn_ack_failed[]=
-"[%3d] WARNING: ack of last datagram failed after %d tries.\n";
+"[%3" IPERF_SOCKET_FORMAT "] WARNING: ack of last datagram failed after %d tries.\n";
 
 const char warn_fileopen_failed[]=
 "WARNING: Unable to open file stream for transfer\n\

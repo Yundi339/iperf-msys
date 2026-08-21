@@ -44,6 +44,9 @@
 #include "iperf_api.h"
 #include "iperf_util.h"
 #include "iperf_locale.h"
+#ifdef _WIN32
+#include "win32/iperf_win32.h"
+#endif
 #include "net.h"
 #include "units.h"
 
@@ -57,6 +60,12 @@ main(int argc, char **argv)
 {
     struct iperf_test *test;
 
+#ifdef _WIN32
+    if (iperf_win32_init() < 0) {
+        fprintf(stderr, "iperf3: unable to initialize Winsock\n");
+        return 1;
+    }
+#endif
     /*
      * Atomics check. We prefer to have atomic types (which is
      * basically on any compiler supporting C11 or better). If we
@@ -150,7 +159,9 @@ run(struct iperf_test *test)
 	iperf_got_sigend(test, signed_sig);
 
     /* Ignore SIGPIPE to simplify error handling */
+#ifdef SIGPIPE
     signal(SIGPIPE, SIG_IGN);
+#endif
 
     switch (test->role) {
         case 's':
@@ -208,7 +219,9 @@ run(struct iperf_test *test)
     }
 
     iperf_catch_sigend(SIG_DFL);
+#ifdef SIGPIPE
     signal(SIGPIPE, SIG_DFL);
+#endif
 
     return 0;
 }

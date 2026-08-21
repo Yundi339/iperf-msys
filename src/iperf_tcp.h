@@ -28,6 +28,8 @@
 #define        IPERF_TCP_H
 
 
+
+#include "iperf_socket.h"
 /**
  * iperf_tcp_accept -- accepts a new TCP connection
  * on tcp_listener_socket for TCP data and param/result
@@ -35,7 +37,7 @@
  *returns 0 on success
  *
  */
-int iperf_tcp_accept(struct iperf_test *);
+iperf_socket_t iperf_tcp_accept(struct iperf_test *);
 
 /**
  * iperf_tcp_recv -- receives the data for TCP
@@ -55,9 +57,9 @@ int iperf_tcp_recv(struct iperf_stream *);
 int iperf_tcp_send(struct iperf_stream *) /* __attribute__((hot)) */;
 
 
-int iperf_tcp_listen(struct iperf_test *);
+iperf_socket_t iperf_tcp_listen(struct iperf_test *);
 
-int iperf_tcp_connect(struct iperf_test *);
+iperf_socket_t iperf_tcp_connect(struct iperf_test *);
 
 
 #endif

@@ -33,7 +33,12 @@
 /* FreeBSD needs _WITH_GETLINE to enable the getline() declaration */
 #define _WITH_GETLINE
 #include <stdio.h>
+#ifndef _WIN32
 #include <termios.h>
+#else
+#include <io.h>
+#include "win32/iperf_win32.h"
+#endif
 #include <inttypes.h>
 #include <stdint.h>
 
@@ -470,10 +475,55 @@ int decode_auth_setting(int enable_debug, const char *authtoken, EVP_PKEY *priva
 #endif //HAVE_SSL
 
 ssize_t iperf_getpass (char **lineptr, size_t *n, FILE *stream) {
+#ifdef _WIN32
+    HANDLE input = (HANDLE)_get_osfhandle(_fileno(stream));
+    DWORD mode = 0;
+    int restore_mode = GetConsoleMode(input, &mode);
+    size_t used = 0;
+    int ch;
+
+    if (restore_mode)
+        SetConsoleMode(input, mode & ~ENABLE_ECHO_INPUT);
+    printf("Password: ");
+    fflush(stdout);
+
+    if (*lineptr == NULL || *n < 2) {
+        char *tmp;
+        *n = 128;
+        tmp = (char *)realloc(*lineptr, *n);
+        if (tmp == NULL) {
+            if (restore_mode)
+                SetConsoleMode(input, mode);
+            return -1;
+        }
+        *lineptr = tmp;
+    }
+
+    while ((ch = fgetc(stream)) != EOF && ch != '\n') {
+        char *tmp;
+        if (ch == '\r')
+            continue;
+        if (used + 1 >= *n) {
+            *n *= 2;
+            tmp = (char *)realloc(*lineptr, *n);
+            if (tmp == NULL) {
+                if (restore_mode)
+                    SetConsoleMode(input, mode);
+                return -1;
+            }
+            *lineptr = tmp;
+        }
+        (*lineptr)[used++] = (char)ch;
+    }
+    (*lineptr)[used] = '\0';
+    if (restore_mode)
+        SetConsoleMode(input, mode);
+    printf("\n");
+    return (ch == EOF && used == 0) ? -1 : (ssize_t)used;
+#else
     struct termios old, new;
     ssize_t nread;
 
-    /* Turn echoing off and fail if we can't. */
     if (tcgetattr (fileno (stream), &old) != 0)
         return -1;
     new = old;
@@ -481,14 +531,10 @@ ssize_t iperf_getpass (char **lineptr, size_t *n, FILE *stream) {
     if (tcsetattr (fileno (stream), TCSAFLUSH, &new) != 0)
         return -1;
 
-    /* Read the password. */
     printf("Password: ");
     nread = getline (lineptr, n, stream);
-
-    /* Restore terminal. */
     (void) tcsetattr (fileno (stream), TCSAFLUSH, &old);
 
-    //strip the \n or \r\n chars
     char *buf = *lineptr;
     int i;
     for (i = 0; buf[i] != '\0'; i++){
@@ -497,6 +543,6 @@ ssize_t iperf_getpass (char **lineptr, size_t *n, FILE *stream) {
             break;
         }
     }
-
     return nread;
+#endif
 }

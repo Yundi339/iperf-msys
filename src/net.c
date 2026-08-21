@@ -72,6 +72,22 @@
 #include "net.h"
 #include "timer.h"
 
+#ifdef HAVE_MSG_TRUNC
+#define IPERF_MSG_TRUNC_ACTIVE(opt) ((opt) & MSG_TRUNC)
+#else
+#define IPERF_MSG_TRUNC_ACTIVE(opt) 0
+#endif
+
+#ifdef _WIN32
+#define IPERF_CLOSE_SOCKET(fd) iperf_win32_close_socket((fd))
+#define IPERF_SOCKET_READ(fd, buf, len) recv((SOCKET)(fd), (buf), (int)(len), 0)
+#define IPERF_SOCKET_WRITE(fd, buf, len) send((SOCKET)(fd), (buf), (int)(len), 0)
+#else
+#define IPERF_CLOSE_SOCKET(fd) close(fd)
+#define IPERF_SOCKET_READ(fd, buf, len) read((fd), (buf), (len))
+#define IPERF_SOCKET_WRITE(fd, buf, len) write((fd), (buf), (len))
+#endif
+
 static int nread_read_timeout = 10;
 static int nread_overall_timeout = 30;
 
@@ -87,7 +103,7 @@ extern int gerror;
  * Copyright (c) 2001 Eric Jackson <ericj@monkey.org>
  */
 int
-timeout_connect(int s, const struct sockaddr *name, socklen_t namelen,
+timeout_connect(iperf_socket_t s, const struct sockaddr *name, socklen_t namelen,
     int timeout)
 {
 	struct pollfd pfd;
@@ -130,7 +146,7 @@ timeout_connect(int s, const struct sockaddr *name, socklen_t namelen,
 */
 
 int
-bind_to_device(int s, int domain, const char *bind_dev)
+bind_to_device(iperf_socket_t s, int domain, const char *bind_dev)
 {
 #if defined(HAVE_SO_BINDTODEVICE)
     return setsockopt(s, SOL_SOCKET, SO_BINDTODEVICE, bind_dev, IFNAMSIZ);
@@ -159,11 +175,12 @@ bind_to_device(int s, int domain, const char *bind_dev)
 }
 
 /* create a socket */
-int
+iperf_socket_t
 create_socket(int domain, int type, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, struct addrinfo **server_res_out)
 {
     struct addrinfo hints, *local_res = NULL, *server_res = NULL;
-    int s, saved_errno;
+    iperf_socket_t s;
+    int saved_errno;
     char portstr[6];
 
     if (local) {
@@ -195,7 +212,7 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
     if (bind_dev) {
         if (bind_to_device(s, domain, bind_dev) < 0) {
             saved_errno = errno;
-            close(s);
+            IPERF_CLOSE_SOCKET(s);
             freeaddrinfo(local_res);
             freeaddrinfo(server_res);
             errno = saved_errno;
@@ -213,7 +230,7 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 
         if (bind(s, (struct sockaddr *) local_res->ai_addr, local_res->ai_addrlen) < 0) {
 	    saved_errno = errno;
-	    close(s);
+	    IPERF_CLOSE_SOCKET(s);
 	    freeaddrinfo(local_res);
 	    freeaddrinfo(server_res);
 	    errno = saved_errno;
@@ -244,7 +261,7 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 	}
 	/* Unknown protocol */
 	else {
-	    close(s);
+	    IPERF_CLOSE_SOCKET(s);
 	    freeaddrinfo(server_res);
 	    errno = EAFNOSUPPORT;
             return -1;
@@ -252,7 +269,7 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 
         if (bind(s, (struct sockaddr *) &lcl, addrlen) < 0) {
 	    saved_errno = errno;
-	    close(s);
+	    IPERF_CLOSE_SOCKET(s);
 	    freeaddrinfo(server_res);
 	    errno = saved_errno;
             return -1;
@@ -264,11 +281,12 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 }
 
 /* make connection to server */
-int
+iperf_socket_t
 netdial(int domain, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, int timeout)
 {
     struct addrinfo *server_res = NULL;
-    int s, saved_errno;
+    iperf_socket_t s;
+    int saved_errno;
 
     s = create_socket(domain, proto, 0, local, bind_dev, local_port, server, port, &server_res);
     if (s < 0) {
@@ -277,7 +295,7 @@ netdial(int domain, int proto, const char *local, const char *bind_dev, int loca
 
     if (timeout_connect(s, (struct sockaddr *) server_res->ai_addr, server_res->ai_addrlen, timeout) < 0 && errno != EINPROGRESS) {
 	saved_errno = errno;
-	close(s);
+	IPERF_CLOSE_SOCKET(s);
 	freeaddrinfo(server_res);
 	errno = saved_errno;
         return -1;
@@ -289,12 +307,13 @@ netdial(int domain, int proto, const char *local, const char *bind_dev, int loca
 
 /***************************************************************/
 
-int
+iperf_socket_t
 netannounce(int domain, int proto, const char *local, const char *bind_dev, int port)
 {
     struct addrinfo hints, *res;
     char portstr[6];
-    int s, opt, saved_errno;
+    iperf_socket_t s;
+    int opt, saved_errno;
 
     snprintf(portstr, 6, "%d", port);
     memset(&hints, 0, sizeof(hints));
@@ -334,7 +353,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 #endif // HAVE_SO_BINDTODEVICE
         {
             saved_errno = errno;
-            close(s);
+            IPERF_CLOSE_SOCKET(s);
             freeaddrinfo(res);
             errno = saved_errno;
             return -1;
@@ -345,7 +364,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
     if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR,
 		   (char *) &opt, sizeof(opt)) < 0) {
 	saved_errno = errno;
-	close(s);
+	IPERF_CLOSE_SOCKET(s);
 	freeaddrinfo(res);
 	errno = saved_errno;
 	return -1;
@@ -367,7 +386,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 	if (setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY,
 		       (char *) &opt, sizeof(opt)) < 0) {
 	    saved_errno = errno;
-	    close(s);
+	    IPERF_CLOSE_SOCKET(s);
 	    freeaddrinfo(res);
 	    errno = saved_errno;
 	    return -1;
@@ -377,7 +396,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 
     if (bind(s, (struct sockaddr *) res->ai_addr, res->ai_addrlen) < 0) {
         saved_errno = errno;
-        close(s);
+        IPERF_CLOSE_SOCKET(s);
 	freeaddrinfo(res);
         errno = saved_errno;
         return -1;
@@ -388,7 +407,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
     if (proto == SOCK_STREAM) {
         if (listen(s, INT_MAX) < 0) {
 	    saved_errno = errno;
-	    close(s);
+	    IPERF_CLOSE_SOCKET(s);
 	    errno = saved_errno;
             return -1;
         }
@@ -402,7 +421,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 /********************************************************************/
 
 int
-Nread(int fd, char *buf, size_t count, int prot)
+Nread(iperf_socket_t fd, char *buf, size_t count, int prot)
 {
     return Nrecv(fd, buf, count, prot, 0);
 }
@@ -412,7 +431,7 @@ Nread(int fd, char *buf, size_t count, int prot)
 /********************************************************************/
 
 int
-Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt)
+Nrecv(iperf_socket_t fd, char *buf, size_t count, int prot, int sock_opt)
 {
     register ssize_t r;
     register size_t nleft = count;
@@ -447,7 +466,7 @@ Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt)
         if (sock_opt)
             r = recv(fd, buf, nleft, sock_opt);
         else
-            r = read(fd, buf, nleft);
+            r = IPERF_SOCKET_READ(fd, buf, nleft);
 
         if (r < 0) {
             /* XXX EWOULDBLOCK can't happen without non-blocking sockets */
@@ -458,7 +477,7 @@ Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt)
         } else if (r == 0)
             break;
 
-	if (sock_opt & MSG_TRUNC) {
+	if (IPERF_MSG_TRUNC_ACTIVE(sock_opt)) {
             size_t bytes_copied = (r > nleft)? nleft: r;
             nleft -= bytes_copied;
             buf += bytes_copied;
@@ -508,7 +527,7 @@ Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt)
 /* Nreads 'count' bytes from a socket - but without using select()   */
 /********************************************************************/
 int
-Nread_no_select(int fd, char *buf, size_t count, int prot)
+Nread_no_select(iperf_socket_t fd, char *buf, size_t count, int prot)
 {
     return Nrecv_no_select(fd, buf, count, prot, 0);
 }
@@ -517,7 +536,7 @@ Nread_no_select(int fd, char *buf, size_t count, int prot)
 /* Nrecv reads 'count' bytes from a socket - but without using select()   */
 /********************************************************************/
 int
-Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt)
+Nrecv_no_select(iperf_socket_t fd, char *buf, size_t count, int prot, int sock_opt)
 {
     register ssize_t r;
     register size_t nleft = count;
@@ -526,7 +545,7 @@ Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt)
         if (sock_opt)
             r = recv(fd, buf, nleft, sock_opt);
         else
-            r = read(fd, buf, nleft);
+            r = IPERF_SOCKET_READ(fd, buf, nleft);
 
         if (r < 0) {
             /* XXX EWOULDBLOCK can't happen without non-blocking sockets */
@@ -537,7 +556,7 @@ Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt)
         } else if (r == 0)
             break;
 
-	if (sock_opt & MSG_TRUNC) {
+	if (IPERF_MSG_TRUNC_ACTIVE(sock_opt)) {
             size_t bytes_copied = (r > nleft)? nleft: r;
             nleft -= bytes_copied;
             buf += bytes_copied;
@@ -600,7 +619,7 @@ static int recv_msg_gro(int fd, char *buf, int len, int *gso_size)
 }
 
 int
-Nread_gro(int fd, char *buf, size_t count, int prot, int *dgram_sz)
+Nread_gro(iperf_socket_t fd, char *buf, size_t count, int prot, int *dgram_sz)
 {
 	register ssize_t r;
 
@@ -634,7 +653,7 @@ Nread_gro(int fd, char *buf, size_t count, int prot, int *dgram_sz)
 }
 #else
 int
-Nread_gro(int fd, char *buf, size_t count, int prot, int *dgram_sz)
+Nread_gro(iperf_socket_t fd, char *buf, size_t count, int prot, int *dgram_sz)
 {
 	/* GRO not supported on this platform */
 	return NET_HARDERROR;
@@ -646,13 +665,13 @@ Nread_gro(int fd, char *buf, size_t count, int prot, int *dgram_sz)
  */
 
 int
-Nwrite(int fd, const char *buf, size_t count, int prot)
+Nwrite(iperf_socket_t fd, const char *buf, size_t count, int prot)
 {
     register ssize_t r;
     register size_t nleft = count;
 
     while (nleft > 0) {
-	r = write(fd, buf, nleft);
+	r = IPERF_SOCKET_WRITE(fd, buf, nleft);
 	if (r < 0) {
 	    switch (errno) {
 		case EINTR:
@@ -721,7 +740,7 @@ static int udp_sendmsg_gso(int fd, const char *buf, size_t count, uint16_t gso_s
 }
 
 int
-Nwrite_gso(int fd, const char *buf, size_t count, int prot, uint16_t gso_size)
+Nwrite_gso(iperf_socket_t fd, const char *buf, size_t count, int prot, uint16_t gso_size)
 {
 	register ssize_t r;
 
@@ -747,7 +766,7 @@ Nwrite_gso(int fd, const char *buf, size_t count, int prot, uint16_t gso_size)
 }
 #else
 int
-Nwrite_gso(int fd, const char *buf, size_t count, int prot, uint16_t gso_size)
+Nwrite_gso(iperf_socket_t fd, const char *buf, size_t count, int prot, uint16_t gso_size)
 {
 	/* GSO not supported on this platform */
 	return NET_HARDERROR;
@@ -771,7 +790,7 @@ has_sendfile(void)
  */
 
 int
-Nsendfile(int fromfd, int tofd, const char *buf, size_t count)
+Nsendfile(int fromfd, iperf_socket_t tofd, const char *buf, size_t count)
 {
 #if defined(HAVE_SENDFILE)
     off_t offset;
@@ -835,7 +854,7 @@ Nsendfile(int fromfd, int tofd, const char *buf, size_t count)
 /*************************************************************************/
 
 int
-setnonblocking(int fd, int nonblocking)
+setnonblocking(iperf_socket_t fd, int nonblocking)
 {
     int flags, newflags;
 
@@ -859,7 +878,7 @@ setnonblocking(int fd, int nonblocking)
 /****************************************************************************/
 
 int
-getsockdomain(int sock)
+getsockdomain(iperf_socket_t sock)
 {
     struct sockaddr_storage sa;
     socklen_t len = sizeof(sa);
@@ -874,7 +893,7 @@ getsockdomain(int sock)
 
 // Sync and close a socket
 void
-iperf_sync_close_socket(int sock)
+iperf_sync_close_socket(iperf_socket_t sock)
 {
 #ifdef HAVE_SOCKET_SHUTDOWN_SHUT_WR
     char buffer[128];
@@ -883,6 +902,6 @@ iperf_sync_close_socket(int sock)
 #else // HAVE_SOCKET_SHUTDOWN_SHUT_WR
     sleep(1); // Not the best mechanism, but should be good enough for error cases (and is simple and portable)
 #endif // HAVE_SOCKET_SHUTDOWN_SHUT_WR
-    close(sock);
+    IPERF_CLOSE_SOCKET(sock);
 }
 

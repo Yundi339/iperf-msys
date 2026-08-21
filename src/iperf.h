@@ -32,6 +32,8 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <stdint.h>
+#include "iperf_socket.h"
+#include "iperf_socket_internal.h"
 #include <inttypes.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -214,7 +216,7 @@ struct iperf_stream
     /* configurable members */
     int       local_port;
     int       remote_port;
-    int       socket;
+    iperf_socket_t socket;
     int       id;
     int       sender;
 	/* XXX: is settings just a pointer to the same struct in iperf_test? if not,
@@ -266,9 +268,9 @@ struct iperf_stream
 struct protocol {
     int       id;
     char      *name;
-    int       (*accept)(struct iperf_test *);
-    int       (*listen)(struct iperf_test *);
-    int       (*connect)(struct iperf_test *);
+    iperf_socket_t (*accept_fn)(struct iperf_test *);
+    iperf_socket_t (*listen_fn)(struct iperf_test *);
+    iperf_socket_t (*connect_fn)(struct iperf_test *);
     int       (*send)(struct iperf_stream *);
     int       (*recv)(struct iperf_stream *);
     int       (*init)(struct iperf_test *);
@@ -336,10 +338,10 @@ struct iperf_test
     char     *logfile;				/* --logfile option */
     FILE     *outfile;
 
-    int       ctrl_sck;
+    iperf_socket_t ctrl_sck;
     int       mapped_v4;
-    int       listener;
-    int       prot_listener;
+    iperf_socket_t listener;
+    iperf_socket_t prot_listener;
 
     int	      ctrl_sck_mss;			/* MSS for the control channel */
 
@@ -376,7 +378,7 @@ struct iperf_test
 
     char     *json_output_string; /* rendered JSON output if json_output is set */
     /* Select related parameters */
-    int       max_fd;
+    iperf_socket_t max_fd;
     fd_set    read_set;                         /* set of read sockets */
     fd_set    write_set;                        /* set of write sockets */
 
@@ -409,9 +411,9 @@ struct iperf_test
     int          bitrate_limit_exceeded;                  /* Set by callback routine when average data rate exceeded the server's bitrate limit */
 
     int server_last_run_rc;                      /* Save last server run rc for next test */
-    uint server_forced_idle_restarts_count;      /* count number of forced server restarts to make sure it is not stack */
-    uint server_forced_no_msg_restarts_count;    /* count number of forced server restarts to make sure it is not stack */
-    uint server_test_number;                     /* count number of tests performed by a server */
+    unsigned int server_forced_idle_restarts_count;      /* count number of forced server restarts to make sure it is not stack */
+    unsigned int server_forced_no_msg_restarts_count;    /* count number of forced server restarts to make sure it is not stack */
+    unsigned int server_test_number;                     /* count number of tests performed by a server */
 
     char      cookie[COOKIE_SIZE];
 //    struct iperf_stream *streams;               /* pointer to list of struct stream */
