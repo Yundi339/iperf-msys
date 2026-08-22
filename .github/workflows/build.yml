@@ -147,6 +147,7 @@ jobs:
         run_case 6202 src/iperf3.exe -c 127.0.0.1 -u -b 10M -p 6202 -t 1
         run_case 6204 src/iperf3.exe -c 127.0.0.1 -u -b 10M -R -p 6204 -t 1
         run_case 6205 src/iperf3.exe -c 127.0.0.1 -u -b 10M --bidir -p 6205 -t 1
+        run_case 6210 src/iperf3.exe -c 127.0.0.1 -u -b 10M -P 4 -p 6210 -t 1
     - name: parallel and lifecycle stress
       shell: msys2 {0}
       run: |
