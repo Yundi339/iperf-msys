@@ -152,26 +152,48 @@ jobs:
       shell: msys2 {0}
       run: |
         set -euxo pipefail
-        timeout 90 src/iperf3.exe -s -1 -p 6203 &
+        timeout 90 src/iperf3.exe -s -1 -p 6203 >tcp80-server.log 2>&1 &
         server_pid=$!
         trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
         sleep 1
-        timeout 60 src/iperf3.exe -c 127.0.0.1 -p 6203 -P 80 -t 1
-        wait "$server_pid"
+        if ! timeout 60 src/iperf3.exe -c 127.0.0.1 -p 6203 -P 80 -t 1 >tcp80-client.log 2>&1; then
+          cat tcp80-client.log
+          cat tcp80-server.log
+          exit 1
+        fi
+        if ! wait "$server_pid"; then
+          cat tcp80-client.log
+          cat tcp80-server.log
+          exit 1
+        fi
         trap - EXIT
         modes=('' '-R' '--bidir' '' '')
         for i in 0 1 2 3 4; do
           port=$((6300 + i))
-          timeout 60 src/iperf3.exe -s -1 -p "$port" &
+          server_log="lifecycle-${port}-server.log"
+          client_log="lifecycle-${port}-client.log"
+          timeout 60 src/iperf3.exe -s -1 -p "$port" >"$server_log" 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
           sleep 1
           if [[ -n "${modes[$i]}" ]]; then
-            timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1 "${modes[$i]}"
+            if ! timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1 "${modes[$i]}" >"$client_log" 2>&1; then
+              cat "$client_log"
+              cat "$server_log"
+              exit 1
+            fi
           else
-            timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1
+            if ! timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1 >"$client_log" 2>&1; then
+              cat "$client_log"
+              cat "$server_log"
+              exit 1
+            fi
           fi
-          wait "$server_pid"
+          if ! wait "$server_pid"; then
+            cat "$client_log"
+            cat "$server_log"
+            exit 1
+          fi
           trap - EXIT
         done
     - name: server duration rejection
