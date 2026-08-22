@@ -52,6 +52,18 @@
 #include "net.h"
 #include "cjson.h"
 
+/*
+ * Winsock does not reliably demultiplex multiple UDP sockets bound to the
+ * same local port with SO_REUSEADDR.  A Windows server therefore moves each
+ * additional UDP stream to the next consecutive port and tells an updated
+ * client to follow it with this handshake reply.
+ */
+#if BYTE_ORDER == BIG_ENDIAN
+#define UDP_CONNECT_REPLY_NEXT_PORT 0x35373839
+#else
+#define UDP_CONNECT_REPLY_NEXT_PORT 0x39383735
+#endif
+
 /* iperf_udp_recv
  *
  * receives the data for UDP
@@ -528,6 +540,12 @@ iperf_udp_accept(struct iperf_test *test)
     int       sz;
     iperf_socket_t s;
     int	      rc;
+    int       listener_port = test->server_port;
+#ifdef _WIN32
+    struct iperf_stream *existing;
+    int accepted_streams = 0;
+    int total_streams;
+#endif
 
     /*
      * Get the current outstanding socket.  This socket will be used to handle
@@ -608,11 +626,34 @@ iperf_udp_accept(struct iperf_test *test)
         return -1;
     }
 
+    buf = UDP_CONNECT_REPLY;
+#ifdef _WIN32
+    /*
+     * A bidirectional test has two data streams per requested stream.  Count
+     * the streams already accepted so the next listener can move forward by
+     * one port only when another stream is still expected.
+     */
+    SLIST_FOREACH(existing, &test->streams, streams)
+        ++accepted_streams;
+    total_streams = test->num_streams * (test->mode == BIDIRECTIONAL ? 2 : 1);
+    if (accepted_streams + 1 < total_streams) {
+        if (test->server_port >= 65535 - accepted_streams) {
+            errno = EINVAL;
+            i_errno = IESTREAMLISTEN;
+            return -1;
+        }
+        listener_port = test->server_port + accepted_streams + 1;
+        buf = UDP_CONNECT_REPLY_NEXT_PORT;
+    }
+#endif
+
     /*
      * Create a new "listening" socket to replace the one we were using before.
+     * Additional Windows UDP streams use consecutive ports because sharing the
+     * original port among multiple connected UDP sockets is not deterministic.
      */
     FD_CLR(test->prot_listener, &test->read_set); // No control messages from old listener
-    test->prot_listener = netannounce(test->settings->domain, Pudp, test->bind_address, test->bind_dev, test->server_port);
+    test->prot_listener = netannounce(test->settings->domain, Pudp, test->bind_address, test->bind_dev, listener_port);
     if (test->prot_listener < 0) {
         i_errno = IESTREAMLISTEN;
         return -1;
@@ -621,8 +662,7 @@ iperf_udp_accept(struct iperf_test *test)
     FD_SET(test->prot_listener, &test->read_set);
     test->max_fd = (test->max_fd < test->prot_listener) ? test->prot_listener : test->max_fd;
 
-    /* Let the client know we're ready "accept" another UDP "stream" */
-    buf = UDP_CONNECT_REPLY;
+    /* Let the client know we're ready to "accept" another UDP stream. */
     if (send(s, (const char *)&buf, sizeof(buf), 0) < 0) {
         i_errno = IESTREAMWRITE;
         return -1;
@@ -636,8 +676,8 @@ iperf_udp_accept(struct iperf_test *test)
  * iperf_udp_listen
  *
  * Start up a listener for UDP stream connections.  Unlike for TCP,
- * there is no listen(2) for UDP.  This socket will however accept
- * a UDP datagram from a client (indicating the client's presence).
+ * there is no listen(2) for UDP.  This socket will however accept a
+ * UDP datagram from a client (indicating the client's presence).
  */
 iperf_socket_t
 iperf_udp_listen(struct iperf_test *test)
@@ -774,11 +814,20 @@ iperf_udp_connect(struct iperf_test *test)
             printf("Connect received for Socket %" IPERF_SOCKET_FORMAT ", sz=%d, buf=%x, i=%d, max_len_wait_for_reply=%d\n", IPERF_SOCKET_FORMAT_ARG(s), sz, buf, i, max_len_wait_for_reply);
         }
         i += sz;
-    } while (buf != UDP_CONNECT_REPLY && buf != LEGACY_UDP_CONNECT_REPLY && i < max_len_wait_for_reply);
+    } while (buf != UDP_CONNECT_REPLY && buf != UDP_CONNECT_REPLY_NEXT_PORT && buf != LEGACY_UDP_CONNECT_REPLY && i < max_len_wait_for_reply);
 
-    if (buf != UDP_CONNECT_REPLY  && buf != LEGACY_UDP_CONNECT_REPLY) {
+    if (buf != UDP_CONNECT_REPLY && buf != UDP_CONNECT_REPLY_NEXT_PORT && buf != LEGACY_UDP_CONNECT_REPLY) {
         i_errno = IESTREAMREAD;
         return -1;
+    }
+
+    if (buf == UDP_CONNECT_REPLY_NEXT_PORT) {
+        if (test->server_port >= 65535) {
+            errno = EINVAL;
+            i_errno = IESTREAMCONNECT;
+            return -1;
+        }
+        ++test->server_port;
     }
 
     return s;
