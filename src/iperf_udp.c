@@ -778,10 +778,13 @@ iperf_udp_connect(struct iperf_test *test)
     }
 
 #ifdef SO_RCVTIMEO
-    /* 30 sec timeout for a case when there is a network problem. */
+    /* Keep the connect handshake bounded if the peer never replies. */
     tv.tv_sec = 30;
     tv.tv_usec = 0;
-    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
+    if (setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval)) < 0) {
+        i_errno = IESTREAMCONNECT;
+        return -1;
+    }
 #endif
 
     /*
@@ -820,6 +823,26 @@ iperf_udp_connect(struct iperf_test *test)
         i_errno = IESTREAMREAD;
         return -1;
     }
+
+#ifdef SO_RCVTIMEO
+    /*
+     * The long timeout above is only for the connect handshake.  Once the
+     * stream becomes a data socket, keep Windows receives short so a worker
+     * can observe test shutdown promptly.  Other platforms return to their
+     * normal blocking socket behavior.
+     */
+#ifdef _WIN32
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000;
+#else
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+#endif
+    if (setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval)) < 0) {
+        i_errno = IESTREAMCONNECT;
+        return -1;
+    }
+#endif
 
     if (buf == UDP_CONNECT_REPLY_NEXT_PORT) {
         if (test->server_port >= 65535) {
