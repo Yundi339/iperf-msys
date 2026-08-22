@@ -210,7 +210,37 @@ iperf_win32_getpeername(iperf_socket_t s, struct sockaddr *name, int *namelen)
 static inline int
 iperf_win32_setsockopt(iperf_socket_t s, int level, int optname, const void *optval, int optlen)
 {
-    int rc = setsockopt((SOCKET)(uintptr_t)s, level, optname, (const char *) optval, optlen);
+    int rc;
+
+    /*
+     * Winsock expects SO_RCVTIMEO / SO_SNDTIMEO as a DWORD number of
+     * milliseconds, while POSIX callers pass struct timeval.  Accept the
+     * POSIX form here so common iperf code does not accidentally turn a
+     * 30-second timeval into a 30-millisecond Winsock timeout.
+     */
+    if (level == SOL_SOCKET &&
+        (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO) &&
+        optval != NULL && optlen == (int)sizeof(struct timeval)) {
+        const struct timeval *tv = (const struct timeval *)optval;
+        uint64_t timeout_ms;
+        DWORD winsock_timeout;
+
+        if (tv->tv_sec < 0 || tv->tv_usec < 0 || tv->tv_usec >= 1000000) {
+            errno = EINVAL;
+            return SOCKET_ERROR;
+        }
+
+        timeout_ms = (uint64_t)tv->tv_sec * 1000U;
+        if (tv->tv_usec != 0)
+            timeout_ms += ((uint64_t)tv->tv_usec + 999U) / 1000U;
+        winsock_timeout = timeout_ms > UINT_MAX ? (DWORD)UINT_MAX : (DWORD)timeout_ms;
+
+        rc = setsockopt((SOCKET)(uintptr_t)s, level, optname,
+                        (const char *)&winsock_timeout, sizeof(winsock_timeout));
+    } else {
+        rc = setsockopt((SOCKET)(uintptr_t)s, level, optname,
+                        (const char *) optval, optlen);
+    }
     if (rc == SOCKET_ERROR)
         iperf_win32_set_errno(WSAGetLastError());
     return rc;
