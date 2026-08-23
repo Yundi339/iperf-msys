@@ -125,6 +125,8 @@ main(int argc, char **argv)
     ret += test_iperf_win32_socket_timeout_roundtrip();
 #endif
 
+    iperf_free_test(test);
+
     if (ret < 0)
     {
         return -1;
