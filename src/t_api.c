@@ -57,6 +57,14 @@ int test_iperf_set_mss(struct iperf_test *test)
     return 0;
 }
 
+int test_iperf_udp_connect_port_state(struct iperf_test *test)
+{
+    iperf_set_test_server_port(test, 5203);
+    test->udp_connect_port = 5204;
+    assert(iperf_get_test_server_port(test) == 5203);
+    return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -81,6 +89,8 @@ main(int argc, char **argv)
     ret = test_iperf_set_test_bind_port(test);
 
     ret += test_iperf_set_mss(test);
+
+    ret += test_iperf_udp_connect_port_state(test);
 
     if (ret < 0)
     {
