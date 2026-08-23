@@ -81,7 +81,14 @@ jobs:
         sudo apt-get -y update && sudo apt-get install -y build-essential
     - name: build
       run: |
-        ./configure CFLAGS="-g -O0 -fsanitize=address" LDFLAGS="-fsanitize=address" && make && make check
+        set -e
+        ./configure CFLAGS="-g -O0 -fsanitize=address" LDFLAGS="-fsanitize=address"
+        make
+        if ! make check; then
+          cat src/test-suite.log 2>/dev/null || true
+          cat src/t_api.log 2>/dev/null || true
+          exit 1
+        fi
     - name: test commands
       run: |
         timeout 300 src/iperf3 -s &
@@ -156,7 +163,7 @@ jobs:
         server_pid=$!
         trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
         sleep 1
-        if ! timeout 60 src/iperf3.exe -c 127.0.0.1 -p 6203 -P 80 -t 1 >tcp80-client.log 2>&1; then
+        if ! timeout 60 src/iperf3.exe -c 127.0.0.1 -p 6203 -P 80 -b 10M -t 1 >tcp80-client.log 2>&1; then
           cat tcp80-client.log
           cat tcp80-server.log
           exit 1
@@ -177,13 +184,13 @@ jobs:
           trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
           sleep 1
           if [[ -n "${modes[$i]}" ]]; then
-            if ! timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1 "${modes[$i]}" >"$client_log" 2>&1; then
+            if ! timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -b 10M -t 1 "${modes[$i]}" >"$client_log" 2>&1; then
               cat "$client_log"
               cat "$server_log"
               exit 1
             fi
           else
-            if ! timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1 >"$client_log" 2>&1; then
+            if ! timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -b 10M -t 1 >"$client_log" 2>&1; then
               cat "$client_log"
               cat "$server_log"
               exit 1
