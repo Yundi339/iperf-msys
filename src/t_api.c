@@ -65,6 +65,35 @@ int test_iperf_udp_connect_port_state(struct iperf_test *test)
     return 0;
 }
 
+#ifdef _WIN32
+int test_iperf_win32_socket_timeout_roundtrip(void)
+{
+    iperf_socket_t s;
+    struct timeval set_timeout;
+    struct timeval got_timeout;
+    int optlen;
+
+    s = socket(AF_INET, SOCK_DGRAM, 0);
+    assert(s != IPERF_INVALID_SOCKET);
+
+    set_timeout.tv_sec = 1;
+    set_timeout.tv_usec = 250000;
+    assert(setsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
+                      &set_timeout, sizeof(set_timeout)) == 0);
+
+    memset(&got_timeout, 0, sizeof(got_timeout));
+    optlen = sizeof(got_timeout);
+    assert(getsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
+                      &got_timeout, &optlen) == 0);
+    assert(optlen == (int)sizeof(got_timeout));
+    assert(got_timeout.tv_sec == set_timeout.tv_sec);
+    assert(got_timeout.tv_usec == set_timeout.tv_usec);
+
+    assert(IPERF_SOCKET_CLOSE(s) == 0);
+    return 0;
+}
+#endif
+
 int
 main(int argc, char **argv)
 {
@@ -91,6 +120,10 @@ main(int argc, char **argv)
     ret += test_iperf_set_mss(test);
 
     ret += test_iperf_udp_connect_port_state(test);
+
+#ifdef _WIN32
+    ret += test_iperf_win32_socket_timeout_roundtrip();
+#endif
 
     if (ret < 0)
     {

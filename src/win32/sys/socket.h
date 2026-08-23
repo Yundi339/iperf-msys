@@ -150,7 +150,27 @@ iperf_win32_setsockopt(iperf_socket_t s, int level, int optname, const void *opt
 static inline int
 iperf_win32_getsockopt(iperf_socket_t s, int level, int optname, void *optval, int *optlen)
 {
-    int rc = getsockopt((SOCKET)(uintptr_t)s, level, optname, (char *) optval, optlen);
+    int rc;
+
+    /* Keep the timeout representation symmetric with iperf_win32_setsockopt. */
+    if (level == SOL_SOCKET &&
+        (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO) &&
+        optval != NULL && optlen != NULL &&
+        *optlen == (int)sizeof(struct timeval)) {
+        struct timeval *tv = (struct timeval *)optval;
+        DWORD winsock_timeout = 0;
+        int winsock_optlen = sizeof(winsock_timeout);
+
+        rc = getsockopt((SOCKET)(uintptr_t)s, level, optname,
+                        (char *)&winsock_timeout, &winsock_optlen);
+        if (rc != SOCKET_ERROR) {
+            tv->tv_sec = (long)(winsock_timeout / 1000U);
+            tv->tv_usec = (long)((winsock_timeout % 1000U) * 1000U);
+            *optlen = sizeof(*tv);
+        }
+    } else {
+        rc = getsockopt((SOCKET)(uintptr_t)s, level, optname, (char *) optval, optlen);
+    }
     if (rc == SOCKET_ERROR)
         iperf_win32_set_errno(WSAGetLastError());
     return rc;
