@@ -74,6 +74,8 @@ int test_iperf_udp_connect_port_state(struct iperf_test *test)
 int test_iperf_win32_errno_mapping(void)
 {
     assert(iperf_win32_errno_from_wsa(0) == 0);
+    assert(iperf_win32_errno_from_wsa(WSASYSNOTREADY) == ENETDOWN);
+    assert(iperf_win32_errno_from_wsa(WSAVERNOTSUPPORTED) == EPROTONOSUPPORT);
     assert(iperf_win32_errno_from_wsa(WSAECONNREFUSED) == ECONNREFUSED);
     assert(iperf_win32_errno_from_wsa(WSAETIMEDOUT) == ETIMEDOUT);
     assert(iperf_win32_errno_from_wsa(WSAEWOULDBLOCK) == EWOULDBLOCK);

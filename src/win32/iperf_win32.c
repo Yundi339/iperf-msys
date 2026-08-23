@@ -13,6 +13,10 @@ iperf_win32_errno_from_wsa(int error)
     switch (error) {
     case 0:
         return 0;
+    case WSASYSNOTREADY:
+        return ENETDOWN;
+    case WSAVERNOTSUPPORTED:
+        return EPROTONOSUPPORT;
     case WSAEWOULDBLOCK:
         return EWOULDBLOCK;
     case WSAEINPROGRESS:
@@ -105,7 +109,7 @@ iperf_win32_init(void)
         return -1;
     }
     if (iperf_wsa_result != 0) {
-        errno = EIO;
+        iperf_win32_set_errno(iperf_wsa_result);
         return -1;
     }
     return 0;
