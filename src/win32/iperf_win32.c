@@ -7,6 +7,106 @@
 static INIT_ONCE iperf_wsa_once = INIT_ONCE_STATIC_INIT;
 static int iperf_wsa_result = WSASYSNOTREADY;
 
+void
+iperf_win32_set_errno(int error)
+{
+    switch (error) {
+    case WSAEWOULDBLOCK:
+        errno = EWOULDBLOCK;
+        break;
+    case WSAEINPROGRESS:
+        errno = EINPROGRESS;
+        break;
+#ifdef WSAEALREADY
+    case WSAEALREADY:
+        errno = EALREADY;
+        break;
+#endif
+    case WSAEACCES:
+        errno = EACCES;
+        break;
+    case WSAEFAULT:
+        errno = EFAULT;
+        break;
+    case WSAEINVAL:
+        errno = EINVAL;
+        break;
+    case WSAEBADF:
+    case WSAENOTSOCK:
+        errno = EBADF;
+        break;
+    case WSAEMFILE:
+        errno = EMFILE;
+        break;
+    case WSAETIMEDOUT:
+        errno = ETIMEDOUT;
+        break;
+    case WSAECONNREFUSED:
+        errno = ECONNREFUSED;
+        break;
+    case WSAECONNRESET:
+        errno = ECONNRESET;
+        break;
+    case WSAECONNABORTED:
+        errno = ECONNABORTED;
+        break;
+    case WSAENOTCONN:
+        errno = ENOTCONN;
+        break;
+    case WSAEISCONN:
+        errno = EISCONN;
+        break;
+    case WSAESHUTDOWN:
+        errno = EPIPE;
+        break;
+    case WSAEADDRINUSE:
+        errno = EADDRINUSE;
+        break;
+    case WSAEADDRNOTAVAIL:
+        errno = EADDRNOTAVAIL;
+        break;
+    case WSAEAFNOSUPPORT:
+        errno = EAFNOSUPPORT;
+        break;
+    case WSAEDESTADDRREQ:
+        errno = EDESTADDRREQ;
+        break;
+    case WSAENETDOWN:
+        errno = ENETDOWN;
+        break;
+    case WSAENETRESET:
+        errno = ENETRESET;
+        break;
+    case WSAENETUNREACH:
+        errno = ENETUNREACH;
+        break;
+    case WSAEHOSTUNREACH:
+        errno = EHOSTUNREACH;
+        break;
+    case WSAENOBUFS:
+        errno = ENOBUFS;
+        break;
+    case WSAEMSGSIZE:
+        errno = EMSGSIZE;
+        break;
+    case WSAEPROTONOSUPPORT:
+        errno = EPROTONOSUPPORT;
+        break;
+    case WSAEOPNOTSUPP:
+        errno = EOPNOTSUPP;
+        break;
+    case WSAEINTR:
+#ifdef WSA_OPERATION_ABORTED
+    case WSA_OPERATION_ABORTED:
+#endif
+        errno = EINTR;
+        break;
+    default:
+        errno = EIO;
+        break;
+    }
+}
+
 static BOOL CALLBACK
 iperf_win32_start_winsock(PINIT_ONCE once, PVOID parameter, PVOID *context)
 {
@@ -108,8 +208,7 @@ iperf_win32_wait_readable(SOCKET socket, unsigned int timeout_ms)
 
     rc = select(0, &read_set, NULL, NULL, &timeout);
     if (rc == SOCKET_ERROR) {
-        int error = WSAGetLastError();
-        errno = error == WSAEINTR ? EINTR : EIO;
+        iperf_win32_set_errno(WSAGetLastError());
         return -1;
     }
     return rc;
