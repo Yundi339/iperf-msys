@@ -20,8 +20,11 @@ jobs:
         persist-credentials: false
     - name: install dependencies
       run: |
-        sudo apt-get -y update && sudo apt-get install -y cppcheck && \
-        cppcheck . --force --inline-suppr
+        sudo apt-get -y update && sudo apt-get install -y cppcheck
+        cppcheck . --force --inline-suppr --error-exitcode=1 \
+          --suppress=va_end_missing:src/iperf_error.c \
+          --suppress=doubleFree:src/iperf_util.c \
+          -DPACKAGE_URL='""' -DPACKAGE_BUGREPORT='""' -DPACKAGE_STRING='""'
   build-test-ubuntu-ish:
     strategy:
       matrix:
