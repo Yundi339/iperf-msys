@@ -7,104 +7,83 @@
 static INIT_ONCE iperf_wsa_once = INIT_ONCE_STATIC_INIT;
 static int iperf_wsa_result = WSASYSNOTREADY;
 
-void
-iperf_win32_set_errno(int error)
+int
+iperf_win32_errno_from_wsa(int error)
 {
     switch (error) {
+    case 0:
+        return 0;
     case WSAEWOULDBLOCK:
-        errno = EWOULDBLOCK;
-        break;
+        return EWOULDBLOCK;
     case WSAEINPROGRESS:
-        errno = EINPROGRESS;
-        break;
+        return EINPROGRESS;
 #ifdef WSAEALREADY
     case WSAEALREADY:
-        errno = EALREADY;
-        break;
+        return EALREADY;
 #endif
     case WSAEACCES:
-        errno = EACCES;
-        break;
+        return EACCES;
     case WSAEFAULT:
-        errno = EFAULT;
-        break;
+        return EFAULT;
     case WSAEINVAL:
-        errno = EINVAL;
-        break;
+        return EINVAL;
     case WSAEBADF:
     case WSAENOTSOCK:
-        errno = EBADF;
-        break;
+        return EBADF;
     case WSAEMFILE:
-        errno = EMFILE;
-        break;
+        return EMFILE;
     case WSAETIMEDOUT:
-        errno = ETIMEDOUT;
-        break;
+        return ETIMEDOUT;
     case WSAECONNREFUSED:
-        errno = ECONNREFUSED;
-        break;
+        return ECONNREFUSED;
     case WSAECONNRESET:
-        errno = ECONNRESET;
-        break;
+        return ECONNRESET;
     case WSAECONNABORTED:
-        errno = ECONNABORTED;
-        break;
+        return ECONNABORTED;
     case WSAENOTCONN:
-        errno = ENOTCONN;
-        break;
+        return ENOTCONN;
     case WSAEISCONN:
-        errno = EISCONN;
-        break;
+        return EISCONN;
     case WSAESHUTDOWN:
-        errno = EPIPE;
-        break;
+        return EPIPE;
     case WSAEADDRINUSE:
-        errno = EADDRINUSE;
-        break;
+        return EADDRINUSE;
     case WSAEADDRNOTAVAIL:
-        errno = EADDRNOTAVAIL;
-        break;
+        return EADDRNOTAVAIL;
     case WSAEAFNOSUPPORT:
-        errno = EAFNOSUPPORT;
-        break;
+        return EAFNOSUPPORT;
     case WSAEDESTADDRREQ:
-        errno = EDESTADDRREQ;
-        break;
+        return EDESTADDRREQ;
     case WSAENETDOWN:
-        errno = ENETDOWN;
-        break;
+        return ENETDOWN;
     case WSAENETRESET:
-        errno = ENETRESET;
-        break;
+        return ENETRESET;
     case WSAENETUNREACH:
-        errno = ENETUNREACH;
-        break;
+        return ENETUNREACH;
     case WSAEHOSTUNREACH:
-        errno = EHOSTUNREACH;
-        break;
+        return EHOSTUNREACH;
     case WSAENOBUFS:
-        errno = ENOBUFS;
-        break;
+        return ENOBUFS;
     case WSAEMSGSIZE:
-        errno = EMSGSIZE;
-        break;
+        return EMSGSIZE;
     case WSAEPROTONOSUPPORT:
-        errno = EPROTONOSUPPORT;
-        break;
+        return EPROTONOSUPPORT;
     case WSAEOPNOTSUPP:
-        errno = EOPNOTSUPP;
-        break;
+        return EOPNOTSUPP;
     case WSAEINTR:
 #ifdef WSA_OPERATION_ABORTED
     case WSA_OPERATION_ABORTED:
 #endif
-        errno = EINTR;
-        break;
+        return EINTR;
     default:
-        errno = EIO;
-        break;
+        return EIO;
     }
+}
+
+void
+iperf_win32_set_errno(int error)
+{
+    errno = iperf_win32_errno_from_wsa(error);
 }
 
 static BOOL CALLBACK

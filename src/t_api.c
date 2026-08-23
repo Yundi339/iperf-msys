@@ -27,6 +27,7 @@
 
 
 #include <assert.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,6 +38,10 @@
 #include "version.h"
 
 #include "units.h"
+
+#ifdef _WIN32
+#include "win32/iperf_win32.h"
+#endif
 
 int test_iperf_set_test_bind_port(struct iperf_test *test)
 {
@@ -66,6 +71,15 @@ int test_iperf_udp_connect_port_state(struct iperf_test *test)
 }
 
 #ifdef _WIN32
+int test_iperf_win32_errno_mapping(void)
+{
+    assert(iperf_win32_errno_from_wsa(0) == 0);
+    assert(iperf_win32_errno_from_wsa(WSAECONNREFUSED) == ECONNREFUSED);
+    assert(iperf_win32_errno_from_wsa(WSAETIMEDOUT) == ETIMEDOUT);
+    assert(iperf_win32_errno_from_wsa(WSAEWOULDBLOCK) == EWOULDBLOCK);
+    return 0;
+}
+
 int test_iperf_win32_socket_timeout_roundtrip(void)
 {
     iperf_socket_t s;
@@ -122,6 +136,7 @@ main(int argc, char **argv)
     ret += test_iperf_udp_connect_port_state(test);
 
 #ifdef _WIN32
+    ret += test_iperf_win32_errno_mapping();
     ret += test_iperf_win32_socket_timeout_roundtrip();
 #endif
 

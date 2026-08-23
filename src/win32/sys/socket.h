@@ -171,8 +171,14 @@ iperf_win32_getsockopt(iperf_socket_t s, int level, int optname, void *optval, i
     } else {
         rc = getsockopt((SOCKET)(uintptr_t)s, level, optname, (char *) optval, optlen);
     }
-    if (rc == SOCKET_ERROR)
+    if (rc == SOCKET_ERROR) {
         iperf_win32_set_errno(WSAGetLastError());
+    } else if (level == SOL_SOCKET && optname == SO_ERROR &&
+               optval != NULL && optlen != NULL &&
+               *optlen >= (int)sizeof(int)) {
+        int *socket_error = (int *)optval;
+        *socket_error = iperf_win32_errno_from_wsa(*socket_error);
+    }
     return rc;
 }
 
