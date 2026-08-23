@@ -153,7 +153,7 @@ jobs:
           wait "$server_pid"
           trap - EXIT
         }
-        run_case 6201 src/iperf3.exe -c 127.0.0.1 -p 6201 -t 1
+        run_case 6201 src/iperf3.exe -c 127.0.0.1 -p 6201 -b 10M -t 1
         run_case 6202 src/iperf3.exe -c 127.0.0.1 -u -b 10M -p 6202 -t 1
         run_case 6204 src/iperf3.exe -c 127.0.0.1 -u -b 10M -R -p 6204 -t 1
         run_case 6205 src/iperf3.exe -c 127.0.0.1 -u -b 10M --bidir -p 6205 -t 1
