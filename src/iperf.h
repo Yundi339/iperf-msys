@@ -29,11 +29,28 @@
 
 #include "iperf_config.h"
 
-#ifdef HAVE_WINSOCK2_H
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#include <process.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <stdint.h>
+#include "iperf_socket.h"
+#include "iperf_socket_internal.h"
+#include <inttypes.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE
+#endif
+#ifdef HAVE_LINUX_TCP_H
+#include <linux/tcp.h>
+#else
+#include <netinet/tcp.h>
+#endif
+#include <net/if.h> // for IFNAMSIZ
+
+#if defined(HAVE_CPUSET_SETAFFINITY)
+#include <sys/param.h>
+#include <sys/cpuset.h>
+#endif /* HAVE_CPUSET_SETAFFINITY */
 
 #include "timer.h"
 #include "queue.h"
@@ -47,99 +64,6 @@
 #endif // HAVE_SSL
 
 #include "iperf_pthread.h"
-// Windows兼容性定义 - 只在未定义时定义
-#ifndef socklen_t
-typedef int socklen_t;
-#endif
-#ifndef uid_t
-typedef unsigned int uid_t;
-#endif
-#ifndef gid_t
-typedef unsigned int gid_t;
-#endif
-// Windows socket handling
-#ifdef HAVE_WINSOCK2_H
-#include <io.h>
-#endif
-// 错误码映射 - 只在未定义时定义
-#ifndef EAGAIN
-#define EAGAIN WSAEWOULDBLOCK
-#endif
-#ifndef EWOULDBLOCK
-#define EWOULDBLOCK WSAEWOULDBLOCK
-#endif
-#ifndef EINTR
-#define EINTR WSAEINTR
-#endif
-#ifndef EINPROGRESS
-#define EINPROGRESS WSAEINPROGRESS
-#endif
-#ifndef EISCONN
-#define EISCONN WSAEISCONN
-#endif
-#ifndef ENOTCONN
-#define ENOTCONN WSAENOTCONN
-#endif
-#ifndef ECONNREFUSED
-#define ECONNREFUSED WSAECONNREFUSED
-#endif
-#ifndef ECONNRESET
-#define ECONNRESET WSAECONNRESET
-#endif
-#ifndef EADDRINUSE
-#define EADDRINUSE WSAEADDRINUSE
-#endif
-#ifndef EADDRNOTAVAIL
-#define EADDRNOTAVAIL WSAEADDRNOTAVAIL
-#endif
-#ifndef ENETUNREACH
-#define ENETUNREACH WSAENETUNREACH
-#endif
-#ifndef EHOSTUNREACH
-#define EHOSTUNREACH WSAEHOSTUNREACH
-#endif
-#ifndef ETIMEDOUT
-#define ETIMEDOUT WSAETIMEDOUT
-#endif
-#define getpid _getpid
-#define getuid() 0
-#define getgid() 0
-#define getppid() 0
-#else
-#include <sys/time.h>
-#include <sys/types.h>
-#include <stdint.h>
-#include <inttypes.h>
-#ifdef HAVE_WINSOCK2_H
-// Windows has select in winsock2.h, no need for sys/select.h
-#else
-#include <sys/select.h>
-#endif
-#include <sys/socket.h>
-#endif
-#ifndef _GNU_SOURCE
-# define _GNU_SOURCE
-#endif
-#ifdef HAVE_LINUX_TCP_H
-#include <linux/tcp.h>
-#elif defined(HAVE_WINSOCK2_H)
-// Windows doesn't have netinet/tcp.h, TCP options are in winsock2.h
-#else
-#include <netinet/tcp.h>
-#endif
-#ifdef HAVE_WINSOCK2_H
-// Windows doesn't have net/if.h, define IFNAMSIZ manually
-#ifndef IFNAMSIZ
-#define IFNAMSIZ 16
-#endif
-#else
-#include <net/if.h> // for IFNAMSIZ
-#endif
-
-#if defined(HAVE_CPUSET_SETAFFINITY)
-#include <sys/param.h>
-#include <sys/cpuset.h>
-#endif /* HAVE_CPUSET_SETAFFINITY */
 
 /*
  * Atomic types highly desired, but if not, we approximate what we need
@@ -157,9 +81,9 @@ typedef uint_fast64_t iperf_size_t;
 typedef atomic_uint_fast64_t atomic_iperf_size_t;
 #endif // __IPERF_API_H
 
-#if (defined(__vxworks)) || (defined(__VXWORKS__)) || (defined(HAVE_WINSOCK2_H))
-typedef unsigned int uint;
-#endif // __vxworks or __VXWORKS__ or Windows
+#if (defined(__vxworks)) || (defined(__VXWORKS__))
+typedef unsigned int uint
+#endif // __vxworks or __VXWORKS__
 
 struct iperf_sctp_info
 {
@@ -189,6 +113,8 @@ struct iperf_interval_results
 #if (defined(linux) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)) && \
 	defined(TCP_INFO)
     struct tcp_info tcpInfo; /* getsockopt(TCP_INFO) for Linux, {Free,Net,Open}BSD */
+#elif (defined(__APPLE__) && defined(__MACH__))  && defined(TCP_CONNECTION_INFO)
+    struct tcp_connection_info tcpConnInfo;
 #else
     /* Just placeholders, never accessed. */
     char *tcpInfo;
@@ -269,6 +195,12 @@ struct iperf_settings
     int       cntl_ka_keepidle;     /* Control TCP connection Keepalive idle time (TCP_KEEPIDLE) */
     int       cntl_ka_interval;     /* Control TCP connection Keepalive interval between retries (TCP_KEEPINTV) */
     int       cntl_ka_count;        /* Control TCP connection Keepalive number of retries (TCP_KEEPCNT) */
+    /* GSO/GRO fields always present to allow client-server negotiation regardless of local support */
+    int       gso;
+    int       gso_dg_size;
+    int       gso_bf_size;
+    int       gro;
+    int       gro_bf_size;
 };
 
 struct iperf_test;
@@ -284,7 +216,7 @@ struct iperf_stream
     /* configurable members */
     int       local_port;
     int       remote_port;
-    int       socket;
+    iperf_socket_t socket;
     int       id;
     int       sender;
 	/* XXX: is settings just a pointer to the same struct in iperf_test? if not,
@@ -336,9 +268,9 @@ struct iperf_stream
 struct protocol {
     int       id;
     char      *name;
-    int       (*accept)(struct iperf_test *);
-    int       (*listen)(struct iperf_test *);
-    int       (*connect)(struct iperf_test *);
+    iperf_socket_t (*accept_fn)(struct iperf_test *);
+    iperf_socket_t (*listen_fn)(struct iperf_test *);
+    iperf_socket_t (*connect_fn)(struct iperf_test *);
     int       (*send)(struct iperf_stream *);
     int       (*recv)(struct iperf_stream *);
     int       (*init)(struct iperf_test *);
@@ -406,10 +338,10 @@ struct iperf_test
     char     *logfile;				/* --logfile option */
     FILE     *outfile;
 
-    int       ctrl_sck;
+    iperf_socket_t ctrl_sck;
     int       mapped_v4;
-    int       listener;
-    int       prot_listener;
+    iperf_socket_t listener;
+    iperf_socket_t prot_listener;
 
     int	      ctrl_sck_mss;			/* MSS for the control channel */
 
@@ -446,7 +378,7 @@ struct iperf_test
 
     char     *json_output_string; /* rendered JSON output if json_output is set */
     /* Select related parameters */
-    int       max_fd;
+    iperf_socket_t max_fd;
     fd_set    read_set;                         /* set of read sockets */
     fd_set    write_set;                        /* set of write sockets */
 
@@ -479,9 +411,9 @@ struct iperf_test
     int          bitrate_limit_exceeded;                  /* Set by callback routine when average data rate exceeded the server's bitrate limit */
 
     int server_last_run_rc;                      /* Save last server run rc for next test */
-    uint server_forced_idle_restarts_count;      /* count number of forced server restarts to make sure it is not stack */
-    uint server_forced_no_msg_restarts_count;    /* count number of forced server restarts to make sure it is not stack */
-    uint server_test_number;                     /* count number of tests performed by a server */
+    unsigned int server_forced_idle_restarts_count;      /* count number of forced server restarts to make sure it is not stack */
+    unsigned int server_forced_no_msg_restarts_count;    /* count number of forced server restarts to make sure it is not stack */
+    unsigned int server_test_number;                     /* count number of tests performed by a server */
 
     char      cookie[COOKIE_SIZE];
 //    struct iperf_stream *streams;               /* pointer to list of struct stream */
@@ -542,7 +474,7 @@ struct iperf_test
 #define MAX_TIME 86400
 #define MAX_OMIT_TIME 600
 #define MAX_BURST 1000
-#define MAX_MSS (9 * 1024)
+#define MAX_MSS (32 * 1024 - 1)
 #define MAX_STREAMS 128
 
 #define TIMESTAMP_FORMAT "%c "
@@ -563,5 +495,9 @@ extern int gerror; /* error value from getaddrinfo(3), for use in internal error
 
 /* In Reverse mode, maximum number of packets to wait for "accept" response - to handle out of order packets */
 #define MAX_REVERSE_OUT_OF_ORDER_PACKETS 2
+
+#define GSO_MAX_DG_IN_BF (1 << 7UL) // 128 - the Linux Kernel limit hardcoded as `UDP_MAX_SEGMENTS (1 << 7UL)` in `udpgso.c`
+#define GSO_BF_MAX_SIZE MAX_UDP_BLOCKSIZE
+#define GRO_BF_MAX_SIZE MAX_UDP_BLOCKSIZE
 
 #endif /* !__IPERF_H */

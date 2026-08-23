@@ -24,12 +24,6 @@
  * This code is distributed under a BSD style license, see the LICENSE
  * file for complete information.
  */
-#ifndef __UNITS_H
-#define __UNITS_H
-
-#include "iperf_config.h"
-#include "iperf.h"
-
 enum {
     UNIT_LEN = 32
 };
@@ -38,5 +32,3 @@ double unit_atof( const char *s );
 double unit_atof_rate( const char *s );
 iperf_size_t unit_atoi( const char *s );
 void unit_snprintf( char *s, int inLen, double inNum, char inFormat );
-
-#endif /* __UNITS_H */

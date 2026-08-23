@@ -28,6 +28,8 @@
 #define __IPERF_UDP_H
 
 
+
+#include "iperf_socket.h"
 /**
  * iperf_udp_recv -- receives the client data for UDP
  *
@@ -51,12 +53,12 @@ int iperf_udp_send(struct iperf_stream *) /* __attribute__((hot)) */;
  *returns 0 on success
  *
  */
-int iperf_udp_accept(struct iperf_test *);
+iperf_socket_t iperf_udp_accept(struct iperf_test *);
 
 
-int iperf_udp_listen(struct iperf_test *);
+iperf_socket_t iperf_udp_listen(struct iperf_test *);
 
-int iperf_udp_connect(struct iperf_test *);
+iperf_socket_t iperf_udp_connect(struct iperf_test *);
 
 int iperf_udp_init(struct iperf_test *);
 

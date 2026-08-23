@@ -1,4 +1,4 @@
-# iperf, Copyright (c) 2014-2025, The Regents of the University of
+# iperf, Copyright (c) 2014-2026, The Regents of the University of
 # California, through Lawrence Berkeley National Laboratory (subject
 # to receipt of any required approvals from the U.S. Dept. of
 # Energy).  All rights reserved.
@@ -25,7 +25,7 @@
 
 # Initialize the autoconf system for the specified tool, version and mailing list
 AC_PREREQ([2.71])
-AC_INIT([iperf-msys2],[3.19.1+],[https://github.com/Yundi339/iperf-msys],[iperf-msys2],[https://github.com/Yundi339/iperf-msys])
+AC_INIT([iperf],[3.21+],[https://github.com/esnet/iperf],[iperf],[https://software.es.net/iperf/])
 m4_include([config/ax_check_openssl.m4])
 m4_include([config/ax_pthread.m4])
 m4_include([config/iperf_config_static_bin.m4])
@@ -46,6 +46,19 @@ AC_CONFIG_HEADERS(src/iperf_config.h)
 
 AC_CANONICAL_HOST
 
+case "$host_os" in
+  mingw*) mingw_build=yes ;;
+  *) mingw_build=no ;;
+esac
+AM_CONDITIONAL([MINGW_BUILD], [test "x$mingw_build" = "xyes"])
+if test "x$mingw_build" = "xyes"; then
+  ac_cv_func_clock_nanosleep=no
+fi
+if test "x$mingw_build" = "xyes"; then
+  iperf_saved_CPPFLAGS="$CPPFLAGS"
+  CPPFLAGS="$CPPFLAGS -I$srcdir/src/win32 -D_WIN32_WINNT=0x0601 -D_CRT_RAND_S -DFD_SETSIZE=512"
+fi
+
 # Checks for tools: c compiler, ranlib (used for creating static libraries),
 # symlinks and libtool
 AC_PROG_CC
@@ -56,13 +69,17 @@ if test "x$GCC" = "xyes"; then
   CFLAGS="$CFLAGS -Wall"
 fi
 
-# Add MinGW-specific flags
-case $host in
-   *-*-mingw*)
-     CFLAGS="$CFLAGS -D_WIN32_WINNT=0x0601"
-     CXXFLAGS="$CXXFLAGS -D_WIN32_WINNT=0x0601"
-     ;;
-esac
+# Check for ldconfig
+AC_ARG_WITH([ldconfig], AS_HELP_STRING([--without-ldconfig], [do not run ldconfig]))
+
+if test "$with_ldconfig" != no; then
+  AC_CHECK_PROG([LDCONFIG], [ldconfig], [ldconfig], [false])
+  if test "$LDCONFIG" != false; then
+    AC_SUBST([LDCONFIG], [$LDCONFIG])
+  else
+    AC_MSG_WARN([ldconfig not found; library path not updated])
+  fi
+fi
 
 # Check if enable profiling
 AC_ARG_ENABLE([profiling],
@@ -75,51 +92,17 @@ echo "floor()"
 exit 1
 ])
 
-# On illumos we need -lsocket, on Windows we need -lws2_32
-case $host in
-   *-*-mingw*)
-     # For MinGW, we need to manually check for ws2_32
-     AC_CHECK_LIB([ws2_32], [socket], [
-       LIBS="-lws2_32 $LIBS"
-     ], [
-       echo "socket() not found in ws2_32"
-       exit 1
-     ])
-     ;;
-   *)
-     AC_SEARCH_LIBS(socket, [socket], [], [
-       echo "socket()"
-       exit 1
-     ])
-     ;;
-esac
-
-# On illumos inet_ntop in in -lnsl, on Windows it's in ws2_32
-case $host in
-   *-*-mingw*)
-     # inet_ntop is already in ws2_32, no need to search again
-     ;;
-   *)
-     AC_SEARCH_LIBS(inet_ntop, [nsl], [], [
-       echo "inet_ntop()"
-       exit 1
-     ])
-     ;;
-esac
-
-# On Windows, check for winsock2 library
-AC_SEARCH_LIBS(WSAStartup, [ws2_32], [], [
-echo "WSAStartup() not found"
+# On illumos we need -lsocket
+AC_SEARCH_LIBS(socket, [ws2_32 socket], [], [
+echo "socket()"
+exit 1
 ])
 
-# On Windows, check for advapi32 library for CryptGenRandom
-case $host in
-    *-*-mingw*)
-        AC_SEARCH_LIBS(CryptGenRandom, [advapi32], [], [
-            echo "CryptGenRandom() not found"
-        ])
-        ;;
-esac
+# On illumos inet_ntop in in -lnsl
+AC_SEARCH_LIBS(inet_ntop, [ws2_32 nsl], [], [
+echo "inet_ntop()"
+exit 1
+])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
@@ -174,7 +157,6 @@ AC_ARG_WITH([sctp],
 )
 
 AC_CHECK_HEADERS([linux/tcp.h])
-AC_CHECK_HEADERS([winsock2.h ws2tcpip.h])
 
 # Check for SCTP support
 if $try_sctp; then
@@ -214,9 +196,6 @@ else
     if $have_ssl; then
         case $host in
            *-*-cygwin)
-             CFLAGS="$CFLAGS -DNOCRYPT"
-             ;;
-           *-*-mingw*)
              CFLAGS="$CFLAGS -DNOCRYPT"
              ;;
         esac
@@ -323,6 +302,23 @@ if test "x$iperf3_cv_header_so_bindtodevice" = "xyes"; then
     AC_DEFINE([HAVE_SO_BINDTODEVICE], [1], [Have SO_BINDTODEVICE sockopt.])
 fi
 
+# Check for IP_BOUND_IF sockopt (believed to be macOS only)
+AC_CACHE_CHECK([IP_BOUND_IF socket option],
+[iperf3_cv_header_ip_bound_if],
+AC_COMPILE_IFELSE(
+  [AC_LANG_PROGRAM([[#include <netinet/in.h>]],
+                   [[int foo = IP_BOUND_IF;]])],
+  iperf3_cv_header_ip_bound_if=yes,
+  iperf3_cv_header_ip_bound_if=no))
+if test "x$iperf3_cv_header_ip_bound_if" = "xyes"; then
+    AC_DEFINE([HAVE_IP_BOUND_IF], [1], [Have IP_BOUND_IF sockopt.])
+fi
+
+if test "x$iperf3_cv_header_so_bindtodevice" = "xyes" -o "x$iperf3_cv_header_ip_bound_if" = "xyes"; then
+    AC_DEFINE([CAN_BIND_TO_DEVICE], [1], [Can bind to device via SO_BINDTODEVICE or IP_BOUND_IF.])
+fi
+
+
 # Check for IP_MTU_DISCOVER (mostly on Linux)
 AC_CACHE_CHECK([IP_MTU_DISCOVER socket option],
 [iperf3_cv_header_ip_mtu_discover],
@@ -421,6 +417,44 @@ if test "x$iperf3_cv_header_ipproto_mptcp" = "xyes"; then
     AC_DEFINE([HAVE_IPPROTO_MPTCP], [1], [Have MPTCP protocol.])
 fi
 
+# Check for UDP_SEGMENT sockopt
+AC_CACHE_CHECK([UDP_SEGMENT socket option],
+[iperf3_cv_header_udp_segment],
+AC_COMPILE_IFELSE(
+  [AC_LANG_PROGRAM([[#include <linux/udp.h>]],
+                   [[int foo = UDP_SEGMENT;]])],
+  iperf3_cv_header_udp_segment=yes,
+  iperf3_cv_header_udp_segment=no))
+if test "x$iperf3_cv_header_udp_segment" = "xyes"; then
+    AC_DEFINE([HAVE_UDP_SEGMENT], [1], [Have UDP_SEGMENT sockopt.])
+fi
+
+# Check for UDP_GRO sockopt
+AC_CACHE_CHECK([UDP_GRO socket option],
+[iperf3_cv_header_udp_gro],
+AC_COMPILE_IFELSE(
+  [AC_LANG_PROGRAM([[#include <linux/udp.h>]],
+                   [[int foo = UDP_GRO;]])],
+  iperf3_cv_header_udp_gro=yes,
+  iperf3_cv_header_udp_gro=no))
+if test "x$iperf3_cv_header_udp_gro" = "xyes"; then
+    AC_DEFINE([HAVE_UDP_GRO], [1], [Have UDP_GRO sockopt.])
+fi
+
+# Check socket shutdown() with SHUT_WR
+AC_CACHE_CHECK([SHUT_WR socket shutdown option],
+[iperf3_cv_header_ip_shut_wr],
+AC_COMPILE_IFELSE(
+  [AC_LANG_PROGRAM([[#include <sys/types.h>
+                     #include <sys/socket.h>
+                     #include <netinet/in.h>]],
+                   [[int foo = SHUT_WR;]])],
+  iperf3_cv_header_ip_shut_wr=yes,
+  iperf3_cv_header_ip_shut_wr=no))
+if test "x$iperf3_cv_header_ip_shut_wr" = "xyes"; then
+    AC_DEFINE([HAVE_SOCKET_SHUTDOWN_SHUT_WR], [1], [Have SHUT_WR socket shutdown option.])
+fi
+
 # Check if we need -lrt for clock_gettime
 AC_SEARCH_LIBS(clock_gettime, [rt posix4])
 # Check for clock_gettime support
@@ -434,6 +468,10 @@ AC_CHECK_FUNCS([nanosleep])
 AC_SEARCH_LIBS(clock_nanosleep, [rt posix4])
 # Check for clock_nanosleep support
 AC_CHECK_FUNCS([clock_nanosleep])
+
+if test "x$mingw_build" = "xyes"; then
+  CPPFLAGS="$iperf_saved_CPPFLAGS -D_WIN32_WINNT=0x0601 -D_CRT_RAND_S -DFD_SETSIZE=512"
+fi
 
 AC_CONFIG_FILES([Makefile src/Makefile src/version.h examples/Makefile iperf3.spec])
 AC_OUTPUT

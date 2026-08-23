@@ -1,0 +1,3 @@
+#ifndef IPERF_WIN32_SCHED_H
+#define IPERF_WIN32_SCHED_H
+#endif

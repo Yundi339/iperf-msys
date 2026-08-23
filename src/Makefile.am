@@ -1,3 +1,6 @@
+if MINGW_BUILD
+AM_CPPFLAGS = -I$(top_srcdir)/src/win32
+endif
 lib_LTLIBRARIES         = libiperf.la                                   # Build and install an iperf library
 bin_PROGRAMS            = iperf3                                        # Build and install an iperf binary
 if ENABLE_PROFILING
@@ -5,12 +8,10 @@ noinst_PROGRAMS         = t_timer t_units t_uuid t_api t_auth iperf3_profile   #
 else
 noinst_PROGRAMS         = t_timer t_units t_uuid t_api t_auth                  # Build, but don't install the test programs
 endif
-include_HEADERS         = iperf_api.h                                   # Defines the headers that get installed with the program
+include_HEADERS         = iperf_api.h iperf_socket.h                                   # Defines the headers that get installed with the program
 
 
 # Specify the source files and flags for the iperf library
-libiperf_la_LIBADD      = $(LIBS)
-libiperf_la_LDFLAGS     = -version-info 0:0:0
 libiperf_la_SOURCES     = \
                         cjson.c \
                         cjson.h \
@@ -37,6 +38,8 @@ libiperf_la_SOURCES     = \
                         iperf_time.h \
                         iperf_pthread.c \
                         iperf_pthread.h \
+                        iperf_socket.h \
+                        iperf_socket_internal.h \
 			dscp.c \
                         net.c \
                         net.h \
@@ -49,10 +52,14 @@ libiperf_la_SOURCES     = \
                         units.h \
                         version.h
 
+if MINGW_BUILD
+libiperf_la_SOURCES += win32/iperf_win32.c win32/iperf_win32.h
+endif
+
 # Specify the sources and various flags for the iperf binary
 iperf3_SOURCES          = main.c
 iperf3_CFLAGS           = -g
-iperf3_LDADD            = libiperf.la $(LIBS)
+iperf3_LDADD            = libiperf.la
 iperf3_LDFLAGS          = -g
 
 if ENABLE_PROFILING
@@ -63,7 +70,7 @@ iperf3_profile_SOURCES  = main.c \
                           $(libiperf_la_SOURCES)
 
 iperf3_profile_CFLAGS   = -pg -g
-iperf3_profile_LDADD    = libiperf.la $(LIBS)
+iperf3_profile_LDADD    = libiperf.la
 iperf3_profile_LDFLAGS  = -pg -g
 endif
 
@@ -71,27 +78,27 @@ endif
 t_timer_SOURCES         = t_timer.c
 t_timer_CFLAGS          = -g
 t_timer_LDFLAGS         =
-t_timer_LDADD           = libiperf.la $(LIBS)
+t_timer_LDADD           = libiperf.la
 
 t_units_SOURCES         = t_units.c
 t_units_CFLAGS          = -g
 t_units_LDFLAGS         =
-t_units_LDADD           = libiperf.la $(LIBS)
+t_units_LDADD           = libiperf.la
 
 t_uuid_SOURCES          = t_uuid.c
 t_uuid_CFLAGS           = -g
 t_uuid_LDFLAGS          =
-t_uuid_LDADD            = libiperf.la $(LIBS)
+t_uuid_LDADD            = libiperf.la
 
 t_api_SOURCES           = t_api.c
 t_api_CFLAGS            = -g
 t_api_LDFLAGS           =
-t_api_LDADD             = libiperf.la $(LIBS)
+t_api_LDADD             = libiperf.la
 
 t_auth_SOURCES           = t_auth.c
 t_auth_CFLAGS            = -g
 t_auth_LDFLAGS           =
-t_auth_LDADD             = libiperf.la $(LIBS)
+t_auth_LDADD             = libiperf.la
 
 
 
@@ -103,24 +110,8 @@ TESTS                   = \
                         t_api \
 			t_auth
 
-# 设置测试环境，使测试失败时显示详细错误信息
-AM_TESTS_ENVIRONMENT = \
-    export VERBOSE=1; \
-    export TEST_DEBUG=1;
-
-# 重写check-TESTS目标，使用我们的包装器
-check-TESTS:
-	@echo "=== 使用增强的测试包装器运行测试 ==="
-	@if [ ! -f "test_wrapper.sh" ]; then \
-		echo "错误: test_wrapper.sh 不存在"; \
-		exit 1; \
-	fi
-	@chmod +x test_wrapper.sh
-	@echo "测试列表: $(TESTS)"
-	@for test in $(TESTS); do \
-		echo "运行测试: $$test"; \
-		./test_wrapper.sh $$test || exit 1; \
-	done
-	@echo "=== 所有测试完成 ==="
-
 dist_man_MANS          = iperf3.1 libiperf.3
+
+install-exec-hook:
+	@ldconfig_cmd='$(LDCONFIG)'; \
+	if test -n "$$ldconfig_cmd"; then $$ldconfig_cmd || true; fi

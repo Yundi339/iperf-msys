@@ -26,16 +26,7 @@
  */
 #include "iperf_config.h"
 
-#include "iperf.h"
-#include "iperf_util.h"
-#include "net.h"
-#include "timer.h"
 #include <stdio.h>
-#ifdef HAVE_WINSOCK2_H
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <io.h>
-#else
 #include <unistd.h>
 #include <errno.h>
 #include <arpa/inet.h>
@@ -43,14 +34,12 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <assert.h>
-#ifdef HAVE_WINSOCK2_H
-// Windows has netdb functions in ws2tcpip.h, no need for netdb.h
-#else
 #include <netdb.h>
-#endif
 #include <string.h>
 #include <fcntl.h>
 #include <limits.h>
+#if defined(HAVE_UDP_SEGMENT) || defined(HAVE_UDP_GRO)
+#include <linux/udp.h>
 #endif
 
 #ifdef HAVE_SENDFILE
@@ -70,9 +59,34 @@
 #endif
 #endif /* HAVE_SENDFILE */
 
+#ifdef HAVE_IP_BOUND_IF
+#include <netinet/in.h>
+#endif /* HAVE_IP_BOUND_IF */
+
 #ifdef HAVE_POLL_H
 #include <poll.h>
 #endif /* HAVE_POLL_H */
+
+#include "iperf.h"
+#include "iperf_util.h"
+#include "net.h"
+#include "timer.h"
+
+#ifdef HAVE_MSG_TRUNC
+#define IPERF_MSG_TRUNC_ACTIVE(opt) ((opt) & MSG_TRUNC)
+#else
+#define IPERF_MSG_TRUNC_ACTIVE(opt) 0
+#endif
+
+#ifdef _WIN32
+#define IPERF_CLOSE_SOCKET(fd) iperf_win32_close_socket((fd))
+#define IPERF_SOCKET_READ(fd, buf, len) recv((SOCKET)(fd), (buf), (int)(len), 0)
+#define IPERF_SOCKET_WRITE(fd, buf, len) send((SOCKET)(fd), (buf), (int)(len), 0)
+#else
+#define IPERF_CLOSE_SOCKET(fd) close(fd)
+#define IPERF_SOCKET_READ(fd, buf, len) read((fd), (buf), (len))
+#define IPERF_SOCKET_WRITE(fd, buf, len) write((fd), (buf), (len))
+#endif
 
 static int nread_read_timeout = 10;
 static int nread_overall_timeout = 30;
@@ -89,7 +103,7 @@ extern int gerror;
  * Copyright (c) 2001 Eric Jackson <ericj@monkey.org>
  */
 int
-timeout_connect(int s, const struct sockaddr *name, socklen_t namelen,
+timeout_connect(iperf_socket_t s, const struct sockaddr *name, socklen_t namelen,
     int timeout)
 {
 	struct pollfd pfd;
@@ -99,33 +113,12 @@ timeout_connect(int s, const struct sockaddr *name, socklen_t namelen,
 
 	flags = 0;
 	if (timeout != -1) {
-#ifdef HAVE_WINSOCK2_H
-		// Windows uses ioctlsocket for non-blocking mode
-		u_long mode = 1;
-		if (ioctlsocket(s, FIONBIO, &mode) != 0)
-			return -1;
-#else
 		flags = fcntl(s, F_GETFL, 0);
 		if (fcntl(s, F_SETFL, flags | O_NONBLOCK) == -1)
 			return -1;
-#endif
 	}
 
 	if ((ret = connect(s, name, namelen)) != 0 && errno == EINPROGRESS) {
-#ifdef HAVE_WINSOCK2_H
-		// Windows uses select instead of poll
-		fd_set writefds;
-		struct timeval tv;
-		FD_ZERO(&writefds);
-		FD_SET(s, &writefds);
-		tv.tv_sec = timeout / 1000;
-		tv.tv_usec = (timeout % 1000) * 1000;
-		if ((ret = select(1, NULL, &writefds, NULL, &tv)) == 1) {
-			optlen = sizeof(optval);
-			if ((ret = getsockopt(s, SOL_SOCKET, SO_ERROR,
-			    (char*)&optval, &optlen)) == 0) {
-				errno = optval;
-#else
 		pfd.fd = s;
 		pfd.events = POLLOUT;
 		if ((ret = poll(&pfd, 1, timeout)) == 1) {
@@ -133,7 +126,6 @@ timeout_connect(int s, const struct sockaddr *name, socklen_t namelen,
 			if ((ret = getsockopt(s, SOL_SOCKET, SO_ERROR,
 			    &optval, &optlen)) == 0) {
 				errno = optval;
-#endif
 				ret = optval == 0 ? 0 : -1;
 			}
 		} else if (ret == 0) {
@@ -143,30 +135,52 @@ timeout_connect(int s, const struct sockaddr *name, socklen_t namelen,
 			ret = -1;
 	}
 
-	if (timeout != -1) {
-#ifdef HAVE_WINSOCK2_H
-		// Windows: restore blocking mode
-		u_long mode = 0;
-		ioctlsocket(s, FIONBIO, &mode);
-#else
-		if (fcntl(s, F_SETFL, flags) == -1)
-			ret = -1;
-#endif
-	}
+	if (timeout != -1 && fcntl(s, F_SETFL, flags) == -1)
+		ret = -1;
 
 	return (ret);
 }
 
-/* netdial and netannouce code comes from libtask: http://swtch.com/libtask/
+/* netdial and netannounce code comes from libtask: http://swtch.com/libtask/
  * Copyright: http://swtch.com/libtask/COPYRIGHT
 */
 
-/* create a socket */
 int
+bind_to_device(iperf_socket_t s, int domain, const char *bind_dev)
+{
+#if defined(HAVE_SO_BINDTODEVICE)
+    return setsockopt(s, SOL_SOCKET, SO_BINDTODEVICE, bind_dev, IFNAMSIZ);
+#elif defined(HAVE_IP_BOUND_IF)
+    int opt;
+    switch (domain) {
+        case IPPROTO_IP:
+            opt = IP_BOUND_IF;
+            break;
+        case IPPROTO_IPV6:
+            opt = IPV6_BOUND_IF;
+            break;
+        default:
+            errno = ENOTSUP;
+            return -1;
+    }
+    int index = if_nametoindex(bind_dev);
+    if (index == 0) {
+        return -1;
+    }
+    return setsockopt(s, domain, opt, &index, sizeof(index));
+#else
+    errno = ENOTSUP;
+    return -1;
+#endif
+}
+
+/* create a socket */
+iperf_socket_t
 create_socket(int domain, int type, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, struct addrinfo **server_res_out)
 {
     struct addrinfo hints, *local_res = NULL, *server_res = NULL;
-    int s, saved_errno;
+    iperf_socket_t s;
+    int saved_errno;
     char portstr[6];
 
     if (local) {
@@ -196,21 +210,9 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
     }
 
     if (bind_dev) {
-#if defined(HAVE_SO_BINDTODEVICE)
-        if (setsockopt(s, SOL_SOCKET, SO_BINDTODEVICE,
-                       bind_dev, IFNAMSIZ) < 0)
-#endif // HAVE_SO_BINDTODEVICE
-        {
+        if (bind_to_device(s, domain, bind_dev) < 0) {
             saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-            closesocket(s);
-#else
-    #ifdef HAVE_WINSOCK2_H
-        closesocket(s);
-#else
-        close(s);
-#endif
-#endif
+            IPERF_CLOSE_SOCKET(s);
             freeaddrinfo(local_res);
             freeaddrinfo(server_res);
             errno = saved_errno;
@@ -228,11 +230,7 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 
         if (bind(s, (struct sockaddr *) local_res->ai_addr, local_res->ai_addrlen) < 0) {
 	    saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-	    closesocket(s);
-#else
-	    close(s);
-#endif
+	    IPERF_CLOSE_SOCKET(s);
 	    freeaddrinfo(local_res);
 	    freeaddrinfo(server_res);
 	    errno = saved_errno;
@@ -263,11 +261,7 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 	}
 	/* Unknown protocol */
 	else {
-#ifdef HAVE_WINSOCK2_H
-	    closesocket(s);
-#else
-	    close(s);
-#endif
+	    IPERF_CLOSE_SOCKET(s);
 	    freeaddrinfo(server_res);
 	    errno = EAFNOSUPPORT;
             return -1;
@@ -275,11 +269,7 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 
         if (bind(s, (struct sockaddr *) &lcl, addrlen) < 0) {
 	    saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-	    closesocket(s);
-#else
-	    close(s);
-#endif
+	    IPERF_CLOSE_SOCKET(s);
 	    freeaddrinfo(server_res);
 	    errno = saved_errno;
             return -1;
@@ -291,11 +281,12 @@ create_socket(int domain, int type, int proto, const char *local, const char *bi
 }
 
 /* make connection to server */
-int
+iperf_socket_t
 netdial(int domain, int proto, const char *local, const char *bind_dev, int local_port, const char *server, int port, int timeout)
 {
     struct addrinfo *server_res = NULL;
-    int s, saved_errno;
+    iperf_socket_t s;
+    int saved_errno;
 
     s = create_socket(domain, proto, 0, local, bind_dev, local_port, server, port, &server_res);
     if (s < 0) {
@@ -304,11 +295,7 @@ netdial(int domain, int proto, const char *local, const char *bind_dev, int loca
 
     if (timeout_connect(s, (struct sockaddr *) server_res->ai_addr, server_res->ai_addrlen, timeout) < 0 && errno != EINPROGRESS) {
 	saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-	closesocket(s);
-#else
-	close(s);
-#endif
+	IPERF_CLOSE_SOCKET(s);
 	freeaddrinfo(server_res);
 	errno = saved_errno;
         return -1;
@@ -320,12 +307,13 @@ netdial(int domain, int proto, const char *local, const char *bind_dev, int loca
 
 /***************************************************************/
 
-int
+iperf_socket_t
 netannounce(int domain, int proto, const char *local, const char *bind_dev, int port)
 {
     struct addrinfo hints, *res;
     char portstr[6];
-    int s, opt, saved_errno;
+    iperf_socket_t s;
+    int opt, saved_errno;
 
     snprintf(portstr, 6, "%d", port);
     memset(&hints, 0, sizeof(hints));
@@ -365,15 +353,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 #endif // HAVE_SO_BINDTODEVICE
         {
             saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-            closesocket(s);
-#else
-    #ifdef HAVE_WINSOCK2_H
-        closesocket(s);
-#else
-        close(s);
-#endif
-#endif
+            IPERF_CLOSE_SOCKET(s);
             freeaddrinfo(res);
             errno = saved_errno;
             return -1;
@@ -384,25 +364,11 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
     if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR,
 		   (char *) &opt, sizeof(opt)) < 0) {
 	saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-	closesocket(s);
-#else
-	close(s);
-#endif
+	IPERF_CLOSE_SOCKET(s);
 	freeaddrinfo(res);
 	errno = saved_errno;
 	return -1;
     }
-
-#ifdef HAVE_WINSOCK2_H
-    // Windows特定：设置SO_EXCLUSIVEADDRUSE为0，允许端口重用
-    opt = 0;
-    if (setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-		   (char *) &opt, sizeof(opt)) < 0) {
-	// 如果SO_EXCLUSIVEADDRUSE不支持，继续执行
-	// 这在某些Windows版本上可能不支持
-    }
-#endif
     /*
      * If we got an IPv6 socket, figure out if it should accept IPv4
      * connections as well.  We do that if and only if no address
@@ -420,11 +386,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 	if (setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY,
 		       (char *) &opt, sizeof(opt)) < 0) {
 	    saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-	    closesocket(s);
-#else
-	    close(s);
-#endif
+	    IPERF_CLOSE_SOCKET(s);
 	    freeaddrinfo(res);
 	    errno = saved_errno;
 	    return -1;
@@ -434,11 +396,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 
     if (bind(s, (struct sockaddr *) res->ai_addr, res->ai_addrlen) < 0) {
         saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-        closesocket(s);
-#else
-        close(s);
-#endif
+        IPERF_CLOSE_SOCKET(s);
 	freeaddrinfo(res);
         errno = saved_errno;
         return -1;
@@ -449,11 +407,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
     if (proto == SOCK_STREAM) {
         if (listen(s, INT_MAX) < 0) {
 	    saved_errno = errno;
-#ifdef HAVE_WINSOCK2_H
-	    closesocket(s);
-#else
-	    close(s);
-#endif
+	    IPERF_CLOSE_SOCKET(s);
 	    errno = saved_errno;
             return -1;
         }
@@ -467,7 +421,7 @@ netannounce(int domain, int proto, const char *local, const char *bind_dev, int 
 /********************************************************************/
 
 int
-Nread(int fd, char *buf, size_t count, int prot)
+Nread(iperf_socket_t fd, char *buf, size_t count, int prot)
 {
     return Nrecv(fd, buf, count, prot, 0);
 }
@@ -477,7 +431,7 @@ Nread(int fd, char *buf, size_t count, int prot)
 /********************************************************************/
 
 int
-Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt)
+Nrecv(iperf_socket_t fd, char *buf, size_t count, int prot, int sock_opt)
 {
     register ssize_t r;
     register size_t nleft = count;
@@ -512,11 +466,7 @@ Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt)
         if (sock_opt)
             r = recv(fd, buf, nleft, sock_opt);
         else
-#ifdef HAVE_WINSOCK2_H
-            r = recv(fd, buf, nleft, 0); // Windows: use recv for sockets
-#else
-            r = read(fd, buf, nleft);
-#endif
+            r = IPERF_SOCKET_READ(fd, buf, nleft);
 
         if (r < 0) {
             /* XXX EWOULDBLOCK can't happen without non-blocking sockets */
@@ -527,11 +477,7 @@ Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt)
         } else if (r == 0)
             break;
 
-#ifdef MSG_TRUNC
-	if (sock_opt & MSG_TRUNC) {
-#else
-	if (0) { // MSG_TRUNC not available on this platform
-#endif
+	if (IPERF_MSG_TRUNC_ACTIVE(sock_opt)) {
             size_t bytes_copied = (r > nleft)? nleft: r;
             nleft -= bytes_copied;
             buf += bytes_copied;
@@ -581,7 +527,7 @@ Nrecv(int fd, char *buf, size_t count, int prot, int sock_opt)
 /* Nreads 'count' bytes from a socket - but without using select()   */
 /********************************************************************/
 int
-Nread_no_select(int fd, char *buf, size_t count, int prot)
+Nread_no_select(iperf_socket_t fd, char *buf, size_t count, int prot)
 {
     return Nrecv_no_select(fd, buf, count, prot, 0);
 }
@@ -590,7 +536,7 @@ Nread_no_select(int fd, char *buf, size_t count, int prot)
 /* Nrecv reads 'count' bytes from a socket - but without using select()   */
 /********************************************************************/
 int
-Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt)
+Nrecv_no_select(iperf_socket_t fd, char *buf, size_t count, int prot, int sock_opt)
 {
     register ssize_t r;
     register size_t nleft = count;
@@ -599,11 +545,7 @@ Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt)
         if (sock_opt)
             r = recv(fd, buf, nleft, sock_opt);
         else
-#ifdef HAVE_WINSOCK2_H
-            r = recv(fd, buf, nleft, 0); // Windows: use recv for sockets
-#else
-            r = read(fd, buf, nleft);
-#endif
+            r = IPERF_SOCKET_READ(fd, buf, nleft);
 
         if (r < 0) {
             /* XXX EWOULDBLOCK can't happen without non-blocking sockets */
@@ -614,11 +556,7 @@ Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt)
         } else if (r == 0)
             break;
 
-#ifdef MSG_TRUNC
-	if (sock_opt & MSG_TRUNC) {
-#else
-	if (0) { // MSG_TRUNC not available on this platform
-#endif
+	if (IPERF_MSG_TRUNC_ACTIVE(sock_opt)) {
             size_t bytes_copied = (r > nleft)? nleft: r;
             nleft -= bytes_copied;
             buf += bytes_copied;
@@ -633,23 +571,107 @@ Nrecv_no_select(int fd, char *buf, size_t count, int prot, int sock_opt)
     return count - nleft;
 }
 
+#ifdef HAVE_UDP_GRO
+static int recv_msg_gro(int fd, char *buf, int len, int *gso_size)
+{
+	char control[CMSG_SPACE(sizeof(uint16_t))] = {0};
+	struct msghdr msg = {0};
+	struct iovec iov = {0};
+	struct cmsghdr *cmsg;
+	uint16_t *gsosizeptr;
+	int ret;
+
+	/* Input validation */
+	if (!buf || len <= 0 || !gso_size) {
+		return -1;
+	}
+
+	iov.iov_base = buf;
+	iov.iov_len = len;
+
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+
+	msg.msg_control = control;
+	msg.msg_controllen = sizeof(control);
+
+	*gso_size = -1;
+	ret = recvmsg(fd, &msg, MSG_DONTWAIT);
+
+	if (ret > 0) {
+		for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+			if (cmsg->cmsg_level == IPPROTO_UDP && cmsg->cmsg_type == UDP_GRO) {
+				/* Validate cmsg data length */
+				if (cmsg->cmsg_len >= CMSG_LEN(sizeof(uint16_t))) {
+					gsosizeptr = (uint16_t *) CMSG_DATA(cmsg);
+					*gso_size = *gsosizeptr;
+					/* Sanity check the gso_size value */
+					if (*gso_size <= 0 || *gso_size > len) {
+						*gso_size = -1;  /* Mark as invalid */
+					}
+				}
+				break;
+			}
+		}
+	}
+
+	return ret;
+}
+
+int
+Nread_gro(iperf_socket_t fd, char *buf, size_t count, int prot, int *dgram_sz)
+{
+	register ssize_t r;
+
+	/* Input validation */
+	if (!buf || count <= 0 || !dgram_sz) {
+		return NET_HARDERROR;
+	}
+
+	/* Limit maximum buffer size to prevent excessive memory usage */
+	if (count > MAX_UDP_BLOCKSIZE) {
+		count = MAX_UDP_BLOCKSIZE;
+	}
+
+	r = recv_msg_gro(fd, buf, count, dgram_sz);
+
+	if (r < 0) {
+		if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
+			return 0;
+		} else {
+			return NET_HARDERROR;
+		}
+	}
+
+	/* Additional validation of returned dgram_sz */
+	if (r > 0 && *dgram_sz > 0 && *dgram_sz > r) {
+		/* dgram_sz shouldn't be larger than actual received data */
+		*dgram_sz = r;
+	}
+
+	return r;
+}
+#else
+int
+Nread_gro(iperf_socket_t fd, char *buf, size_t count, int prot, int *dgram_sz)
+{
+	/* GRO not supported on this platform */
+	return NET_HARDERROR;
+}
+#endif /* HAVE_UDP_GRO */
 
 /*
  *                      N W R I T E
  */
 
 int
-Nwrite(int fd, const char *buf, size_t count, int prot)
+Nwrite(iperf_socket_t fd, const char *buf, size_t count, int prot)
 {
     register ssize_t r;
     register size_t nleft = count;
 
     while (nleft > 0) {
-#ifdef HAVE_WINSOCK2_H
-	r = send(fd, buf, nleft, 0); // Windows: use send for sockets
-#else
-	r = write(fd, buf, nleft);
-#endif
+	r = IPERF_SOCKET_WRITE(fd, buf, nleft);
 	if (r < 0) {
 	    switch (errno) {
 		case EINTR:
@@ -676,6 +698,80 @@ Nwrite(int fd, const char *buf, size_t count, int prot)
     return count;
 }
 
+#ifdef HAVE_UDP_SEGMENT
+static void udp_msg_gso(struct cmsghdr *cm, uint16_t gso_size)
+{
+	uint16_t *valp;
+
+	cm->cmsg_level = IPPROTO_UDP;
+	cm->cmsg_type = UDP_SEGMENT;
+	cm->cmsg_len = CMSG_LEN(sizeof(gso_size));
+	valp = (void *) CMSG_DATA(cm);
+	*valp = gso_size;
+}
+
+static int udp_sendmsg_gso(int fd, const char *buf, size_t count, uint16_t gso_size)
+{
+	char control[CMSG_SPACE(sizeof(gso_size))] = {0};
+	struct msghdr msg = {0};
+	struct iovec iov = {0};
+	size_t msg_controllen;
+	struct cmsghdr *cmsg;
+	int ret;
+
+	iov.iov_base = (void *) buf;
+	iov.iov_len = count;
+
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+
+	msg.msg_control = control;
+	msg.msg_controllen = sizeof(control);
+	cmsg = CMSG_FIRSTHDR(&msg);
+
+	udp_msg_gso(cmsg, gso_size);
+
+	msg_controllen = CMSG_SPACE(sizeof(gso_size));
+	msg.msg_controllen = msg_controllen;
+
+	ret = sendmsg(fd, &msg, 0);
+
+	return ret;
+}
+
+int
+Nwrite_gso(iperf_socket_t fd, const char *buf, size_t count, int prot, uint16_t gso_size)
+{
+	register ssize_t r;
+
+	r = udp_sendmsg_gso(fd, buf, count, gso_size);
+
+	if (r < 0) {
+		switch (errno) {
+			case EINTR:
+			case EAGAIN:
+#if (EAGAIN != EWOULDBLOCK)
+			case EWOULDBLOCK:
+#endif
+				return 0;
+
+			case ENOBUFS:
+				return NET_SOFTERROR;
+
+			default:
+				return NET_HARDERROR;
+		}
+	}
+	return r;
+}
+#else
+int
+Nwrite_gso(iperf_socket_t fd, const char *buf, size_t count, int prot, uint16_t gso_size)
+{
+	/* GSO not supported on this platform */
+	return NET_HARDERROR;
+}
+#endif /* HAVE_UDP_SEGMENT */
 
 int
 has_sendfile(void)
@@ -694,7 +790,7 @@ has_sendfile(void)
  */
 
 int
-Nsendfile(int fromfd, int tofd, const char *buf, size_t count)
+Nsendfile(int fromfd, iperf_socket_t tofd, const char *buf, size_t count)
 {
 #if defined(HAVE_SENDFILE)
     off_t offset;
@@ -758,17 +854,8 @@ Nsendfile(int fromfd, int tofd, const char *buf, size_t count)
 /*************************************************************************/
 
 int
-setnonblocking(int fd, int nonblocking)
+setnonblocking(iperf_socket_t fd, int nonblocking)
 {
-#ifdef HAVE_WINSOCK2_H
-    // Windows uses ioctlsocket for non-blocking mode
-    u_long mode = nonblocking ? 1 : 0;
-    if (ioctlsocket(fd, FIONBIO, &mode) != 0) {
-        perror("ioctlsocket(FIONBIO)");
-        return -1;
-    }
-    return 0;
-#else
     int flags, newflags;
 
     flags = fcntl(fd, F_GETFL, 0);
@@ -786,13 +873,12 @@ setnonblocking(int fd, int nonblocking)
 	    return -1;
 	}
     return 0;
-#endif
 }
 
 /****************************************************************************/
 
 int
-getsockdomain(int sock)
+getsockdomain(iperf_socket_t sock)
 {
     struct sockaddr_storage sa;
     socklen_t len = sizeof(sa);
@@ -802,3 +888,20 @@ getsockdomain(int sock)
     }
     return ((struct sockaddr *) &sa)->sa_family;
 }
+
+/****************************************************************************/
+
+// Sync and close a socket
+void
+iperf_sync_close_socket(iperf_socket_t sock)
+{
+#ifdef HAVE_SOCKET_SHUTDOWN_SHUT_WR
+    char buffer[128];
+    shutdown(sock, SHUT_WR); // Signal that we are done writing
+    while (Nread(sock, buffer, sizeof(buffer), 0) > 0); // Read until EOF
+#else // HAVE_SOCKET_SHUTDOWN_SHUT_WR
+    sleep(1); // Not the best mechanism, but should be good enough for error cases (and is simple and portable)
+#endif // HAVE_SOCKET_SHUTDOWN_SHUT_WR
+    IPERF_CLOSE_SOCKET(sock);
+}
+

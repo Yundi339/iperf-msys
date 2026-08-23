@@ -32,59 +32,23 @@
 #include <getopt.h>
 #include <errno.h>
 #include <signal.h>
-
-#include "iperf_util.h"
-#include "iperf_locale.h"
-#include "net.h"
-#include "units.h"
-#ifdef HAVE_WINSOCK2_H
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-// Windows兼容的信号定义 - 只在未定义时定义
-#ifndef SIGPIPE
-#define SIGPIPE 13
-#endif
-#ifndef SIG_IGN
-#define SIG_IGN ((void(*)(int))1)
-#endif
-#ifndef SIG_DFL
-#define SIG_DFL ((void(*)(int))0)
-#endif
-#ifndef SIGHUP
-#define SIGHUP 1
-#endif
-#ifndef SIGINT
-#define SIGINT 2
-#endif
-#ifndef SIGTERM
-#define SIGTERM 15
-#endif
-
-// Windows兼容的信号处理函数
-void (*signal(int sig, void (*func)(int)))(int) {
-    // Windows下简化处理，直接返回原函数
-    return func;
-}
-
-// Windows兼容的__attribute__定义
-#define __attribute__(x)
-#else
 #include <unistd.h>
 #include <stdint.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#endif
+#include <netdb.h>
 
 #include "iperf.h"
 #include "iperf_api.h"
-#ifdef HAVE_WINSOCK2_H
-// Windows has netdb functions in ws2tcpip.h, no need for netdb.h
-#else
-#include <netdb.h>
+#include "iperf_util.h"
+#include "iperf_locale.h"
+#ifdef _WIN32
+#include "win32/iperf_win32.h"
 #endif
+#include "net.h"
+#include "units.h"
 
 
 static int run(struct iperf_test *test);
@@ -96,19 +60,12 @@ main(int argc, char **argv)
 {
     struct iperf_test *test;
 
-#ifdef HAVE_WINSOCK2_H
-    // Initialize Winsock
-    WSADATA wsaData;
-    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (result != 0) {
-        fprintf(stderr, "WSAStartup failed: %d\n", result);
+#ifdef _WIN32
+    if (iperf_win32_init() < 0) {
+        fprintf(stderr, "iperf3: unable to initialize Winsock\n");
         return 1;
     }
-    // Register cleanup function to be called on exit
-    // Note: atexit functions are called in LIFO order
-    atexit((void(*)(void))WSACleanup);
 #endif
-
     /*
      * Atomics check. We prefer to have atomic types (which is
      * basically on any compiler supporting C11 or better). If we
@@ -119,7 +76,7 @@ main(int argc, char **argv)
      */
 #ifndef HAVE_STDATOMIC_H
 #ifdef __GNUC__
-    if (! __atomic_always_lock_free (sizeof (atomic_uint_fast64_t), 0)) {
+    if (! __atomic_always_lock_free (sizeof (u_int64_t), 0)) {
 #endif // __GNUC__
         fprintf(stderr, "Warning: Cannot guarantee lock-free operation with 64-bit data types\n");
 #ifdef __GNUC__
@@ -202,7 +159,9 @@ run(struct iperf_test *test)
 	iperf_got_sigend(test, signed_sig);
 
     /* Ignore SIGPIPE to simplify error handling */
+#ifdef SIGPIPE
     signal(SIGPIPE, SIG_IGN);
+#endif
 
     switch (test->role) {
         case 's':
@@ -260,7 +219,9 @@ run(struct iperf_test *test)
     }
 
     iperf_catch_sigend(SIG_DFL);
+#ifdef SIGPIPE
     signal(SIGPIPE, SIG_DFL);
+#endif
 
     return 0;
 }

@@ -26,21 +26,14 @@
  */
 #include "iperf_config.h"
 
-#include "timer.h"
-#include "iperf_time.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_WINSOCK2_H
-#include <winsock2.h>
-#include <windows.h>
-// Windows兼容的sleep实现
-#define sleep(x) Sleep((x) * 1000)
-#else
 #include <unistd.h>
 #include <sys/time.h>
-#endif
 
+#include "timer.h"
+#include "iperf_time.h"
 
 
 static int flag;
