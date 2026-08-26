@@ -19,6 +19,8 @@ iperf_win32_errno_from_wsa(int error)
         return ENETDOWN;
     case WSAVERNOTSUPPORTED:
         return EPROTONOSUPPORT;
+    case WSAEPROCLIM:
+        return EAGAIN;
     case WSAEWOULDBLOCK:
         return EWOULDBLOCK;
     case WSAEINPROGRESS:
