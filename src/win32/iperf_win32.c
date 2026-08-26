@@ -32,8 +32,9 @@ iperf_win32_errno_from_wsa(int error)
     case WSAEINVAL:
         return EINVAL;
     case WSAEBADF:
-    case WSAENOTSOCK:
         return EBADF;
+    case WSAENOTSOCK:
+        return ENOTSOCK;
     case WSAEMFILE:
         return EMFILE;
     case WSAETIMEDOUT:
@@ -55,6 +56,7 @@ iperf_win32_errno_from_wsa(int error)
     case WSAEADDRNOTAVAIL:
         return EADDRNOTAVAIL;
     case WSAEAFNOSUPPORT:
+    case WSAEPFNOSUPPORT:
         return EAFNOSUPPORT;
     case WSAEDESTADDRREQ:
         return EDESTADDRREQ;
@@ -64,14 +66,24 @@ iperf_win32_errno_from_wsa(int error)
         return ENETRESET;
     case WSAENETUNREACH:
         return ENETUNREACH;
+    case WSAEHOSTDOWN:
     case WSAEHOSTUNREACH:
         return EHOSTUNREACH;
     case WSAENOBUFS:
         return ENOBUFS;
     case WSAEMSGSIZE:
         return EMSGSIZE;
+    case WSAEPROTOTYPE:
+        return EPROTOTYPE;
+    case WSAENOPROTOOPT:
+        return ENOPROTOOPT;
     case WSAEPROTONOSUPPORT:
+    case WSAESOCKTNOSUPPORT:
         return EPROTONOSUPPORT;
+    case WSAENAMETOOLONG:
+        return ENAMETOOLONG;
+    case WSAELOOP:
+        return ELOOP;
     case WSAEOPNOTSUPP:
         return EOPNOTSUPP;
     case WSAEINTR:
