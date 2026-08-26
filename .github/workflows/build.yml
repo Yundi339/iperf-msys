@@ -123,7 +123,7 @@ jobs:
       shell: msys2 {0}
       run: |
         set -euxo pipefail
-        CFLAGS='-g -O2 -Wall -Werror=format' ./configure --without-openssl --without-sctp --without-ldconfig --disable-shared --enable-static
+        CFLAGS='-g -O2 -Wall -Werror=format -Werror=cpp' ./configure --without-openssl --without-sctp --without-ldconfig --disable-shared --enable-static
         ! grep -q '^#define HAVE_CLOCK_NANOSLEEP 1' src/iperf_config.h
         make V=1 -j2
         make check
@@ -249,7 +249,7 @@ jobs:
       shell: msys2 {0}
       run: |
         set -euxo pipefail
-        CFLAGS='-g -O2 -Wall -Werror=format' ./configure --with-openssl=/ucrt64 --without-sctp --without-ldconfig --disable-shared --enable-static
+        CFLAGS='-g -O2 -Wall -Werror=format -Werror=cpp' ./configure --with-openssl=/ucrt64 --without-sctp --without-ldconfig --disable-shared --enable-static
         grep -q '^#define HAVE_SSL 1' src/iperf_config.h
         make V=1 -j2
         make check
