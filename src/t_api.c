@@ -166,11 +166,14 @@ int test_iperf_win32_socket_timeout_roundtrip(void)
 {
     iperf_socket_t s;
     struct timeval set_timeout;
+    struct timeval invalid_timeout;
     struct {
         struct timeval timeout;
         unsigned char extra[16];
     } option_buffer;
     const int timeout_options[] = { SO_RCVTIMEO, SO_SNDTIMEO };
+    DWORD native_timeout;
+    DWORD got_native_timeout;
     int optlen;
     size_t i;
 
@@ -193,6 +196,31 @@ int test_iperf_win32_socket_timeout_roundtrip(void)
         assert(optlen == (int)sizeof(option_buffer.timeout));
         assert(option_buffer.timeout.tv_sec == set_timeout.tv_sec);
         assert(option_buffer.timeout.tv_usec == set_timeout.tv_usec);
+
+        /* Preserve native Winsock DWORD timeout callers as well. */
+        native_timeout = 1500U;
+        assert(setsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &native_timeout, sizeof(native_timeout)) == 0);
+        got_native_timeout = 0;
+        optlen = sizeof(got_native_timeout);
+        assert(getsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &got_native_timeout, &optlen) == 0);
+        assert(optlen == (int)sizeof(got_native_timeout));
+        assert(got_native_timeout == native_timeout);
+
+        invalid_timeout.tv_sec = -1;
+        invalid_timeout.tv_usec = 0;
+        errno = 0;
+        assert(setsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &invalid_timeout, sizeof(invalid_timeout)) == SOCKET_ERROR);
+        assert(errno == EINVAL);
+
+        invalid_timeout.tv_sec = 0;
+        invalid_timeout.tv_usec = 1000000;
+        errno = 0;
+        assert(setsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &invalid_timeout, sizeof(invalid_timeout)) == SOCKET_ERROR);
+        assert(errno == EINVAL);
     }
 
     assert(IPERF_SOCKET_CLOSE(s) == 0);
