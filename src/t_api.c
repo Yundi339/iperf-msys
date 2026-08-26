@@ -35,6 +35,7 @@
 
 #include "iperf.h"
 #include "iperf_api.h"
+#include "iperf_util.h"
 
 #include "version.h"
 
@@ -129,6 +130,18 @@ int test_iperf_win32_clock_cpu_time(void)
     return 0;
 }
 
+int test_iperf_win32_is_closed_socket(void)
+{
+    iperf_socket_t s;
+
+    s = socket(AF_INET, SOCK_DGRAM, 0);
+    assert(s != IPERF_INVALID_SOCKET);
+    assert(is_closed(s) == 0);
+    assert(IPERF_SOCKET_CLOSE(s) == 0);
+    assert(is_closed(s) == 1);
+    return 0;
+}
+
 int test_iperf_win32_socket_timeout_roundtrip(void)
 {
     iperf_socket_t s;
@@ -187,6 +200,7 @@ main(int argc, char **argv)
 #ifdef _WIN32
     ret += test_iperf_win32_errno_mapping();
     ret += test_iperf_win32_clock_cpu_time();
+    ret += test_iperf_win32_is_closed_socket();
     ret += test_iperf_win32_socket_timeout_roundtrip();
 #endif
 

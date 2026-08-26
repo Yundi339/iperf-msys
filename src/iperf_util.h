@@ -28,6 +28,7 @@
 #define __IPERF_UTIL_H
 
 #include "iperf_config.h"
+#include "iperf_socket.h"
 #include "cjson.h"
 #include <sys/select.h>
 #include <stddef.h>
@@ -38,7 +39,7 @@ void fill_with_repeating_pattern(void *out, size_t outsize);
 
 void make_cookie(char *);
 
-int is_closed(int);
+int is_closed(iperf_socket_t);
 
 double timeval_to_double(struct timeval *tv);
 
