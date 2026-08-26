@@ -32,6 +32,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <sys/resource.h>
 
 #include "iperf.h"
 #include "iperf_api.h"
@@ -130,6 +131,25 @@ int test_iperf_win32_clock_cpu_time(void)
     return 0;
 }
 
+int test_iperf_win32_getrusage_errors(void)
+{
+    struct rusage usage;
+
+    errno = 0;
+    assert(getrusage(RUSAGE_SELF + 1, &usage) == -1);
+    assert(errno == EINVAL);
+
+    errno = 0;
+    assert(getrusage(RUSAGE_SELF, NULL) == -1);
+    assert(errno == EFAULT);
+
+    errno = 0;
+    assert(getrusage(RUSAGE_SELF, &usage) == 0);
+    assert(usage.ru_utime.tv_sec >= 0);
+    assert(usage.ru_stime.tv_sec >= 0);
+    return 0;
+}
+
 int test_iperf_win32_is_closed_socket(void)
 {
     iperf_socket_t s;
@@ -200,6 +220,7 @@ main(int argc, char **argv)
 #ifdef _WIN32
     ret += test_iperf_win32_errno_mapping();
     ret += test_iperf_win32_clock_cpu_time();
+    ret += test_iperf_win32_getrusage_errors();
     ret += test_iperf_win32_is_closed_socket();
     ret += test_iperf_win32_socket_timeout_roundtrip();
 #endif
