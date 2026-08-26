@@ -130,8 +130,10 @@ iperf_win32_clock(void)
     ticks = (cpu_100ns / 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC;
     ticks += ((cpu_100ns % 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC) /
              10000000ULL;
-    if (ticks > (ULONGLONG)LONG_MAX)
+    if (ticks > (ULONGLONG)LONG_MAX) {
+        errno = EIO;
         return (clock_t)-1;
+    }
     return (clock_t)ticks;
 }
 
