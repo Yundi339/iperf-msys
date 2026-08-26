@@ -22,8 +22,8 @@ jobs:
       run: |
         sudo apt-get -y update && sudo apt-get install -y cppcheck
         cppcheck . --force --inline-suppr --error-exitcode=1 \
-          --suppress=va_end_missing:src/iperf_error.c:95 \
-          --suppress=va_end_missing:src/iperf_error.c:105 \
+          --suppress=va_end_missing:src/iperf_error.c:96 \
+          --suppress=va_end_missing:src/iperf_error.c:106 \
           --suppress=doubleFree:src/iperf_util.c:96 \
           -DPACKAGE_URL='""' -DPACKAGE_BUGREPORT='""' -DPACKAGE_STRING='""'
   build-test-ubuntu-ish:
