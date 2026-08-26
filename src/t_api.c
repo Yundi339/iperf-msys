@@ -166,24 +166,34 @@ int test_iperf_win32_socket_timeout_roundtrip(void)
 {
     iperf_socket_t s;
     struct timeval set_timeout;
-    struct timeval got_timeout;
+    struct {
+        struct timeval timeout;
+        unsigned char extra[16];
+    } option_buffer;
+    const int timeout_options[] = { SO_RCVTIMEO, SO_SNDTIMEO };
     int optlen;
+    size_t i;
 
     s = socket(AF_INET, SOCK_DGRAM, 0);
     assert(s != IPERF_INVALID_SOCKET);
 
     set_timeout.tv_sec = 1;
     set_timeout.tv_usec = 250000;
-    assert(setsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
-                      &set_timeout, sizeof(set_timeout)) == 0);
 
-    memset(&got_timeout, 0, sizeof(got_timeout));
-    optlen = sizeof(got_timeout);
-    assert(getsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
-                      &got_timeout, &optlen) == 0);
-    assert(optlen == (int)sizeof(got_timeout));
-    assert(got_timeout.tv_sec == set_timeout.tv_sec);
-    assert(got_timeout.tv_usec == set_timeout.tv_usec);
+    for (i = 0; i < sizeof(timeout_options) / sizeof(timeout_options[0]); ++i) {
+        memset(&option_buffer, 0, sizeof(option_buffer));
+        option_buffer.timeout = set_timeout;
+        assert(setsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &option_buffer, sizeof(option_buffer)) == 0);
+
+        memset(&option_buffer, 0, sizeof(option_buffer));
+        optlen = sizeof(option_buffer);
+        assert(getsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &option_buffer, &optlen) == 0);
+        assert(optlen == (int)sizeof(option_buffer.timeout));
+        assert(option_buffer.timeout.tv_sec == set_timeout.tv_sec);
+        assert(option_buffer.timeout.tv_usec == set_timeout.tv_usec);
+    }
 
     assert(IPERF_SOCKET_CLOSE(s) == 0);
     return 0;
