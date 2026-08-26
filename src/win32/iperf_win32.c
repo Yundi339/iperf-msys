@@ -1,8 +1,10 @@
 #include "iperf_win32.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
+#include <time.h>
 
 static INIT_ONCE iperf_wsa_once = INIT_ONCE_STATIC_INIT;
 static int iperf_wsa_result = WSASYSNOTREADY;
@@ -100,6 +102,38 @@ void
 iperf_win32_set_errno(int error)
 {
     errno = iperf_win32_errno_from_wsa(error);
+}
+
+clock_t
+iperf_win32_clock(void)
+{
+    FILETIME creation_time;
+    FILETIME exit_time;
+    FILETIME kernel_time;
+    FILETIME user_time;
+    ULARGE_INTEGER kernel;
+    ULARGE_INTEGER user;
+    ULONGLONG cpu_100ns;
+    ULONGLONG ticks;
+
+    if (!GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
+                         &kernel_time, &user_time)) {
+        errno = EIO;
+        return (clock_t)-1;
+    }
+
+    kernel.LowPart = kernel_time.dwLowDateTime;
+    kernel.HighPart = kernel_time.dwHighDateTime;
+    user.LowPart = user_time.dwLowDateTime;
+    user.HighPart = user_time.dwHighDateTime;
+    cpu_100ns = kernel.QuadPart + user.QuadPart;
+
+    ticks = (cpu_100ns / 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC;
+    ticks += ((cpu_100ns % 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC) /
+             10000000ULL;
+    if (ticks > (ULONGLONG)LONG_MAX)
+        return (clock_t)-1;
+    return (clock_t)ticks;
 }
 
 static BOOL CALLBACK

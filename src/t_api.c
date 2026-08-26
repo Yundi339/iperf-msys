@@ -31,6 +31,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "iperf.h"
 #include "iperf_api.h"
@@ -71,6 +72,25 @@ int test_iperf_udp_connect_port_state(struct iperf_test *test)
 }
 
 #ifdef _WIN32
+static clock_t
+filetimes_to_clock(const FILETIME *kernel_time, const FILETIME *user_time)
+{
+    ULARGE_INTEGER kernel;
+    ULARGE_INTEGER user;
+    ULONGLONG cpu_100ns;
+    ULONGLONG ticks;
+
+    kernel.LowPart = kernel_time->dwLowDateTime;
+    kernel.HighPart = kernel_time->dwHighDateTime;
+    user.LowPart = user_time->dwLowDateTime;
+    user.HighPart = user_time->dwHighDateTime;
+    cpu_100ns = kernel.QuadPart + user.QuadPart;
+    ticks = (cpu_100ns / 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC;
+    ticks += ((cpu_100ns % 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC) /
+             10000000ULL;
+    return (clock_t)ticks;
+}
+
 int test_iperf_win32_errno_mapping(void)
 {
     assert(iperf_win32_errno_from_wsa(0) == 0);
@@ -83,6 +103,29 @@ int test_iperf_win32_errno_mapping(void)
     assert(iperf_win32_errno_from_wsa(WSAECONNREFUSED) == ECONNREFUSED);
     assert(iperf_win32_errno_from_wsa(WSAETIMEDOUT) == ETIMEDOUT);
     assert(iperf_win32_errno_from_wsa(WSAEWOULDBLOCK) == EWOULDBLOCK);
+    return 0;
+}
+
+int test_iperf_win32_clock_cpu_time(void)
+{
+    FILETIME creation_time;
+    FILETIME exit_time;
+    FILETIME kernel_time;
+    FILETIME user_time;
+    clock_t measured;
+    clock_t expected;
+
+    /* Ensure wall-clock time and CPU time are observably different. */
+    Sleep(250);
+
+    measured = clock();
+    assert(measured != (clock_t)-1);
+    assert(GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
+                           &kernel_time, &user_time) != 0);
+    expected = filetimes_to_clock(&kernel_time, &user_time);
+
+    assert(expected >= measured);
+    assert((expected - measured) <= (clock_t)(CLOCKS_PER_SEC / 10 + 1));
     return 0;
 }
 
@@ -143,6 +186,7 @@ main(int argc, char **argv)
 
 #ifdef _WIN32
     ret += test_iperf_win32_errno_mapping();
+    ret += test_iperf_win32_clock_cpu_time();
     ret += test_iperf_win32_socket_timeout_roundtrip();
 #endif
 
