@@ -113,22 +113,35 @@ int test_iperf_win32_clock_cpu_time(void)
 {
     FILETIME creation_time;
     FILETIME exit_time;
-    FILETIME kernel_time;
-    FILETIME user_time;
+    FILETIME before_kernel_time;
+    FILETIME before_user_time;
+    FILETIME after_kernel_time;
+    FILETIME after_user_time;
+    clock_t before;
     clock_t measured;
-    clock_t expected;
+    clock_t after;
 
-    /* Ensure wall-clock time and CPU time are observably different. */
+    /*
+     * Ensure a wall-clock implementation of clock() would be observably
+     * different from process CPU time, then bracket clock() with the same
+     * GetProcessTimes source instead of imposing a scheduler-sensitive delay
+     * bound between two independent snapshots.
+     */
     Sleep(250);
+
+    assert(GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
+                           &before_kernel_time, &before_user_time) != 0);
+    before = filetimes_to_clock(&before_kernel_time, &before_user_time);
 
     measured = clock();
     assert(measured != (clock_t)-1);
-    assert(GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
-                           &kernel_time, &user_time) != 0);
-    expected = filetimes_to_clock(&kernel_time, &user_time);
 
-    assert(expected >= measured);
-    assert((expected - measured) <= (clock_t)(CLOCKS_PER_SEC / 10 + 1));
+    assert(GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
+                           &after_kernel_time, &after_user_time) != 0);
+    after = filetimes_to_clock(&after_kernel_time, &after_user_time);
+
+    assert(measured >= before);
+    assert(measured <= after);
     return 0;
 }
 
