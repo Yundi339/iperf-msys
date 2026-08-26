@@ -96,7 +96,7 @@ int test_iperf_win32_errno_mapping(void)
     assert(iperf_win32_errno_from_wsa(0) == 0);
     assert(iperf_win32_errno_from_wsa(WSASYSNOTREADY) == ENETDOWN);
     assert(iperf_win32_errno_from_wsa(WSAVERNOTSUPPORTED) == EPROTONOSUPPORT);
-    assert(iperf_win32_errno_from_wsa(WSAENOTSOCK) == ENOTSOCK);
+    assert(iperf_win32_errno_from_wsa(WSAENOTSOCK) == EBADF);
     assert(iperf_win32_errno_from_wsa(WSAENOPROTOOPT) == ENOPROTOOPT);
     assert(iperf_win32_errno_from_wsa(WSAEPROTOTYPE) == EPROTOTYPE);
     assert(iperf_win32_errno_from_wsa(WSAEPFNOSUPPORT) == EAFNOSUPPORT);

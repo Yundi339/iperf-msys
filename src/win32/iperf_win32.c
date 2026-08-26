@@ -34,9 +34,8 @@ iperf_win32_errno_from_wsa(int error)
     case WSAEINVAL:
         return EINVAL;
     case WSAEBADF:
-        return EBADF;
     case WSAENOTSOCK:
-        return ENOTSOCK;
+        return EBADF;
     case WSAEMFILE:
         return EMFILE;
     case WSAETIMEDOUT:
