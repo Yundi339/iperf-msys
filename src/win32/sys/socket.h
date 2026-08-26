@@ -121,7 +121,7 @@ iperf_win32_setsockopt(iperf_socket_t s, int level, int optname, const void *opt
      */
     if (level == SOL_SOCKET &&
         (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO) &&
-        optval != NULL && optlen == (int)sizeof(struct timeval)) {
+        optval != NULL && optlen >= (int)sizeof(struct timeval)) {
         const struct timeval *tv = (const struct timeval *)optval;
         uint64_t timeout_ms;
         DWORD winsock_timeout;
@@ -156,7 +156,7 @@ iperf_win32_getsockopt(iperf_socket_t s, int level, int optname, void *optval, i
     if (level == SOL_SOCKET &&
         (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO) &&
         optval != NULL && optlen != NULL &&
-        *optlen == (int)sizeof(struct timeval)) {
+        *optlen >= (int)sizeof(struct timeval)) {
         struct timeval *tv = (struct timeval *)optval;
         DWORD winsock_timeout = 0;
         int winsock_optlen = sizeof(winsock_timeout);
