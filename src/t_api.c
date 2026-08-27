@@ -27,16 +27,24 @@
 
 
 #include <assert.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+#include <sys/resource.h>
 
 #include "iperf.h"
 #include "iperf_api.h"
+#include "iperf_util.h"
 
 #include "version.h"
 
 #include "units.h"
+
+#ifdef _WIN32
+#include "win32/iperf_win32.h"
+#endif
 
 int test_iperf_set_test_bind_port(struct iperf_test *test)
 {
@@ -56,6 +64,183 @@ int test_iperf_set_mss(struct iperf_test *test)
     assert(mss == 535);
     return 0;
 }
+
+int test_iperf_udp_connect_port_state(struct iperf_test *test)
+{
+    iperf_set_test_server_port(test, 5203);
+    test->udp_connect_port = 5204;
+    assert(iperf_get_test_server_port(test) == 5203);
+    return 0;
+}
+
+#ifdef _WIN32
+static clock_t
+filetimes_to_clock(const FILETIME *kernel_time, const FILETIME *user_time)
+{
+    ULARGE_INTEGER kernel;
+    ULARGE_INTEGER user;
+    ULONGLONG cpu_100ns;
+    ULONGLONG ticks;
+
+    kernel.LowPart = kernel_time->dwLowDateTime;
+    kernel.HighPart = kernel_time->dwHighDateTime;
+    user.LowPart = user_time->dwLowDateTime;
+    user.HighPart = user_time->dwHighDateTime;
+    cpu_100ns = kernel.QuadPart + user.QuadPart;
+    ticks = (cpu_100ns / 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC;
+    ticks += ((cpu_100ns % 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC) /
+             10000000ULL;
+    return (clock_t)ticks;
+}
+
+int test_iperf_win32_errno_mapping(void)
+{
+    assert(iperf_win32_errno_from_wsa(0) == 0);
+    assert(iperf_win32_errno_from_wsa(WSASYSNOTREADY) == ENETDOWN);
+    assert(iperf_win32_errno_from_wsa(WSAVERNOTSUPPORTED) == EPROTONOSUPPORT);
+    assert(iperf_win32_errno_from_wsa(WSAEPROCLIM) == EAGAIN);
+    assert(iperf_win32_errno_from_wsa(WSAENOTSOCK) == EBADF);
+    assert(iperf_win32_errno_from_wsa(WSAENOPROTOOPT) == ENOPROTOOPT);
+    assert(iperf_win32_errno_from_wsa(WSAEPROTOTYPE) == EPROTOTYPE);
+    assert(iperf_win32_errno_from_wsa(WSAEPFNOSUPPORT) == EAFNOSUPPORT);
+    assert(iperf_win32_errno_from_wsa(WSAECONNREFUSED) == ECONNREFUSED);
+    assert(iperf_win32_errno_from_wsa(WSAETIMEDOUT) == ETIMEDOUT);
+    assert(iperf_win32_errno_from_wsa(WSAEWOULDBLOCK) == EWOULDBLOCK);
+    return 0;
+}
+
+int test_iperf_win32_clock_cpu_time(void)
+{
+    FILETIME creation_time;
+    FILETIME exit_time;
+    FILETIME before_kernel_time;
+    FILETIME before_user_time;
+    FILETIME after_kernel_time;
+    FILETIME after_user_time;
+    clock_t before;
+    clock_t measured;
+    clock_t after;
+
+    /*
+     * Ensure a wall-clock implementation of clock() would be observably
+     * different from process CPU time, then bracket clock() with the same
+     * GetProcessTimes source instead of imposing a scheduler-sensitive delay
+     * bound between two independent snapshots.
+     */
+    Sleep(250);
+
+    assert(GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
+                           &before_kernel_time, &before_user_time) != 0);
+    before = filetimes_to_clock(&before_kernel_time, &before_user_time);
+
+    measured = clock();
+    assert(measured != (clock_t)-1);
+
+    assert(GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
+                           &after_kernel_time, &after_user_time) != 0);
+    after = filetimes_to_clock(&after_kernel_time, &after_user_time);
+
+    assert(measured >= before);
+    assert(measured <= after);
+    return 0;
+}
+
+int test_iperf_win32_getrusage_errors(void)
+{
+    struct rusage usage;
+
+    errno = 0;
+    assert(getrusage(RUSAGE_SELF + 1, &usage) == -1);
+    assert(errno == EINVAL);
+
+    errno = 0;
+    assert(getrusage(RUSAGE_SELF, NULL) == -1);
+    assert(errno == EFAULT);
+
+    errno = 0;
+    assert(getrusage(RUSAGE_SELF, &usage) == 0);
+    assert(usage.ru_utime.tv_sec >= 0);
+    assert(usage.ru_stime.tv_sec >= 0);
+    return 0;
+}
+
+int test_iperf_win32_is_closed_socket(void)
+{
+    iperf_socket_t s;
+
+    s = socket(AF_INET, SOCK_DGRAM, 0);
+    assert(s != IPERF_INVALID_SOCKET);
+    assert(is_closed(s) == 0);
+    assert(IPERF_SOCKET_CLOSE(s) == 0);
+    assert(is_closed(s) == 1);
+    return 0;
+}
+
+int test_iperf_win32_socket_timeout_roundtrip(void)
+{
+    iperf_socket_t s;
+    struct timeval set_timeout;
+    struct timeval invalid_timeout;
+    struct {
+        struct timeval timeout;
+        unsigned char extra[16];
+    } option_buffer;
+    const int timeout_options[] = { SO_RCVTIMEO, SO_SNDTIMEO };
+    DWORD native_timeout;
+    DWORD got_native_timeout;
+    int optlen;
+    size_t i;
+
+    s = socket(AF_INET, SOCK_DGRAM, 0);
+    assert(s != IPERF_INVALID_SOCKET);
+
+    set_timeout.tv_sec = 1;
+    set_timeout.tv_usec = 250000;
+
+    for (i = 0; i < sizeof(timeout_options) / sizeof(timeout_options[0]); ++i) {
+        memset(&option_buffer, 0, sizeof(option_buffer));
+        option_buffer.timeout = set_timeout;
+        assert(setsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &option_buffer, sizeof(option_buffer)) == 0);
+
+        memset(&option_buffer, 0, sizeof(option_buffer));
+        optlen = sizeof(option_buffer);
+        assert(getsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &option_buffer, &optlen) == 0);
+        assert(optlen == (int)sizeof(option_buffer.timeout));
+        assert(option_buffer.timeout.tv_sec == set_timeout.tv_sec);
+        assert(option_buffer.timeout.tv_usec == set_timeout.tv_usec);
+
+        /* Preserve native Winsock DWORD timeout callers as well. */
+        native_timeout = 1500U;
+        assert(setsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &native_timeout, sizeof(native_timeout)) == 0);
+        got_native_timeout = 0;
+        optlen = sizeof(got_native_timeout);
+        assert(getsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &got_native_timeout, &optlen) == 0);
+        assert(optlen == (int)sizeof(got_native_timeout));
+        assert(got_native_timeout == native_timeout);
+
+        invalid_timeout.tv_sec = -1;
+        invalid_timeout.tv_usec = 0;
+        errno = 0;
+        assert(setsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &invalid_timeout, sizeof(invalid_timeout)) == SOCKET_ERROR);
+        assert(errno == EINVAL);
+
+        invalid_timeout.tv_sec = 0;
+        invalid_timeout.tv_usec = 1000000;
+        errno = 0;
+        assert(setsockopt(s, SOL_SOCKET, timeout_options[i],
+                          &invalid_timeout, sizeof(invalid_timeout)) == SOCKET_ERROR);
+        assert(errno == EINVAL);
+    }
+
+    assert(IPERF_SOCKET_CLOSE(s) == 0);
+    return 0;
+}
+#endif
 
 int
 main(int argc, char **argv)
@@ -81,6 +266,18 @@ main(int argc, char **argv)
     ret = test_iperf_set_test_bind_port(test);
 
     ret += test_iperf_set_mss(test);
+
+    ret += test_iperf_udp_connect_port_state(test);
+
+#ifdef _WIN32
+    ret += test_iperf_win32_errno_mapping();
+    ret += test_iperf_win32_clock_cpu_time();
+    ret += test_iperf_win32_getrusage_errors();
+    ret += test_iperf_win32_is_closed_socket();
+    ret += test_iperf_win32_socket_timeout_roundtrip();
+#endif
+
+    iperf_free_test(test);
 
     if (ret < 0)
     {

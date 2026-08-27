@@ -10,112 +10,13 @@
 #include <stdint.h>
 #include <limits.h>
 #include "../../iperf_socket.h"
+#include "../iperf_win32.h"
 
 #ifndef SHUT_RD
 #define SHUT_RD SD_RECEIVE
 #define SHUT_WR SD_SEND
 #define SHUT_RDWR SD_BOTH
 #endif
-
-static inline void
-iperf_win32_set_errno(int error)
-{
-    switch (error) {
-    case WSAEWOULDBLOCK:
-        errno = EWOULDBLOCK;
-        break;
-    case WSAEINPROGRESS:
-        errno = EINPROGRESS;
-        break;
-#ifdef WSAEALREADY
-    case WSAEALREADY:
-        errno = EALREADY;
-        break;
-#endif
-    case WSAEACCES:
-        errno = EACCES;
-        break;
-    case WSAEFAULT:
-        errno = EFAULT;
-        break;
-    case WSAEINVAL:
-        errno = EINVAL;
-        break;
-    case WSAEBADF:
-    case WSAENOTSOCK:
-        errno = EBADF;
-        break;
-    case WSAEMFILE:
-        errno = EMFILE;
-        break;
-    case WSAETIMEDOUT:
-        errno = ETIMEDOUT;
-        break;
-    case WSAECONNREFUSED:
-        errno = ECONNREFUSED;
-        break;
-    case WSAECONNRESET:
-        errno = ECONNRESET;
-        break;
-    case WSAECONNABORTED:
-        errno = ECONNABORTED;
-        break;
-    case WSAENOTCONN:
-        errno = ENOTCONN;
-        break;
-    case WSAEISCONN:
-        errno = EISCONN;
-        break;
-    case WSAESHUTDOWN:
-        errno = EPIPE;
-        break;
-    case WSAEADDRINUSE:
-        errno = EADDRINUSE;
-        break;
-    case WSAEADDRNOTAVAIL:
-        errno = EADDRNOTAVAIL;
-        break;
-    case WSAEAFNOSUPPORT:
-        errno = EAFNOSUPPORT;
-        break;
-    case WSAEDESTADDRREQ:
-        errno = EDESTADDRREQ;
-        break;
-    case WSAENETDOWN:
-        errno = ENETDOWN;
-        break;
-    case WSAENETRESET:
-        errno = ENETRESET;
-        break;
-    case WSAENETUNREACH:
-        errno = ENETUNREACH;
-        break;
-    case WSAEHOSTUNREACH:
-        errno = EHOSTUNREACH;
-        break;
-    case WSAENOBUFS:
-        errno = ENOBUFS;
-        break;
-    case WSAEMSGSIZE:
-        errno = EMSGSIZE;
-        break;
-    case WSAEPROTONOSUPPORT:
-        errno = EPROTONOSUPPORT;
-        break;
-    case WSAEOPNOTSUPP:
-        errno = EOPNOTSUPP;
-        break;
-    case WSAEINTR:
-#ifdef WSA_OPERATION_ABORTED
-    case WSA_OPERATION_ABORTED:
-#endif
-        errno = EINTR;
-        break;
-    default:
-        errno = EIO;
-        break;
-    }
-}
 
 static inline iperf_socket_t
 iperf_win32_adopt_socket(SOCKET s)
@@ -220,7 +121,7 @@ iperf_win32_setsockopt(iperf_socket_t s, int level, int optname, const void *opt
      */
     if (level == SOL_SOCKET &&
         (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO) &&
-        optval != NULL && optlen == (int)sizeof(struct timeval)) {
+        optval != NULL && optlen >= (int)sizeof(struct timeval)) {
         const struct timeval *tv = (const struct timeval *)optval;
         uint64_t timeout_ms;
         DWORD winsock_timeout;
@@ -249,9 +150,35 @@ iperf_win32_setsockopt(iperf_socket_t s, int level, int optname, const void *opt
 static inline int
 iperf_win32_getsockopt(iperf_socket_t s, int level, int optname, void *optval, int *optlen)
 {
-    int rc = getsockopt((SOCKET)(uintptr_t)s, level, optname, (char *) optval, optlen);
-    if (rc == SOCKET_ERROR)
+    int rc;
+
+    /* Keep the timeout representation symmetric with iperf_win32_setsockopt. */
+    if (level == SOL_SOCKET &&
+        (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO) &&
+        optval != NULL && optlen != NULL &&
+        *optlen >= (int)sizeof(struct timeval)) {
+        struct timeval *tv = (struct timeval *)optval;
+        DWORD winsock_timeout = 0;
+        int winsock_optlen = sizeof(winsock_timeout);
+
+        rc = getsockopt((SOCKET)(uintptr_t)s, level, optname,
+                        (char *)&winsock_timeout, &winsock_optlen);
+        if (rc != SOCKET_ERROR) {
+            tv->tv_sec = (long)(winsock_timeout / 1000U);
+            tv->tv_usec = (long)((winsock_timeout % 1000U) * 1000U);
+            *optlen = sizeof(*tv);
+        }
+    } else {
+        rc = getsockopt((SOCKET)(uintptr_t)s, level, optname, (char *) optval, optlen);
+    }
+    if (rc == SOCKET_ERROR) {
         iperf_win32_set_errno(WSAGetLastError());
+    } else if (level == SOL_SOCKET && optname == SO_ERROR &&
+               optval != NULL && optlen != NULL &&
+               *optlen >= (int)sizeof(int)) {
+        int *socket_error = (int *)optval;
+        *socket_error = iperf_win32_errno_from_wsa(*socket_error);
+    }
     return rc;
 }
 

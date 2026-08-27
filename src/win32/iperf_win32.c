@@ -1,11 +1,143 @@
 #include "iperf_win32.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
+#include <time.h>
 
 static INIT_ONCE iperf_wsa_once = INIT_ONCE_STATIC_INIT;
 static int iperf_wsa_result = WSASYSNOTREADY;
+
+int
+iperf_win32_errno_from_wsa(int error)
+{
+    switch (error) {
+    case 0:
+        return 0;
+    case WSASYSNOTREADY:
+        return ENETDOWN;
+    case WSAVERNOTSUPPORTED:
+        return EPROTONOSUPPORT;
+    case WSAEPROCLIM:
+        return EAGAIN;
+    case WSAEWOULDBLOCK:
+        return EWOULDBLOCK;
+    case WSAEINPROGRESS:
+        return EINPROGRESS;
+#ifdef WSAEALREADY
+    case WSAEALREADY:
+        return EALREADY;
+#endif
+    case WSAEACCES:
+        return EACCES;
+    case WSAEFAULT:
+        return EFAULT;
+    case WSAEINVAL:
+        return EINVAL;
+    case WSAEBADF:
+    case WSAENOTSOCK:
+        return EBADF;
+    case WSAEMFILE:
+        return EMFILE;
+    case WSAETIMEDOUT:
+        return ETIMEDOUT;
+    case WSAECONNREFUSED:
+        return ECONNREFUSED;
+    case WSAECONNRESET:
+        return ECONNRESET;
+    case WSAECONNABORTED:
+        return ECONNABORTED;
+    case WSAENOTCONN:
+        return ENOTCONN;
+    case WSAEISCONN:
+        return EISCONN;
+    case WSAESHUTDOWN:
+        return EPIPE;
+    case WSAEADDRINUSE:
+        return EADDRINUSE;
+    case WSAEADDRNOTAVAIL:
+        return EADDRNOTAVAIL;
+    case WSAEAFNOSUPPORT:
+    case WSAEPFNOSUPPORT:
+        return EAFNOSUPPORT;
+    case WSAEDESTADDRREQ:
+        return EDESTADDRREQ;
+    case WSAENETDOWN:
+        return ENETDOWN;
+    case WSAENETRESET:
+        return ENETRESET;
+    case WSAENETUNREACH:
+        return ENETUNREACH;
+    case WSAEHOSTDOWN:
+    case WSAEHOSTUNREACH:
+        return EHOSTUNREACH;
+    case WSAENOBUFS:
+        return ENOBUFS;
+    case WSAEMSGSIZE:
+        return EMSGSIZE;
+    case WSAEPROTOTYPE:
+        return EPROTOTYPE;
+    case WSAENOPROTOOPT:
+        return ENOPROTOOPT;
+    case WSAEPROTONOSUPPORT:
+    case WSAESOCKTNOSUPPORT:
+        return EPROTONOSUPPORT;
+    case WSAENAMETOOLONG:
+        return ENAMETOOLONG;
+    case WSAELOOP:
+        return ELOOP;
+    case WSAEOPNOTSUPP:
+        return EOPNOTSUPP;
+    case WSAEINTR:
+#ifdef WSA_OPERATION_ABORTED
+    case WSA_OPERATION_ABORTED:
+#endif
+        return EINTR;
+    default:
+        return EIO;
+    }
+}
+
+void
+iperf_win32_set_errno(int error)
+{
+    errno = iperf_win32_errno_from_wsa(error);
+}
+
+clock_t
+iperf_win32_clock(void)
+{
+    FILETIME creation_time;
+    FILETIME exit_time;
+    FILETIME kernel_time;
+    FILETIME user_time;
+    ULARGE_INTEGER kernel;
+    ULARGE_INTEGER user;
+    ULONGLONG cpu_100ns;
+    ULONGLONG ticks;
+
+    if (!GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
+                         &kernel_time, &user_time)) {
+        errno = EIO;
+        return (clock_t)-1;
+    }
+
+    kernel.LowPart = kernel_time.dwLowDateTime;
+    kernel.HighPart = kernel_time.dwHighDateTime;
+    user.LowPart = user_time.dwLowDateTime;
+    user.HighPart = user_time.dwHighDateTime;
+    cpu_100ns = kernel.QuadPart + user.QuadPart;
+
+    ticks = (cpu_100ns / 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC;
+    ticks += ((cpu_100ns % 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC) /
+             10000000ULL;
+    if (ticks > (ULONGLONG)LONG_MAX) {
+        errno = EIO;
+        return (clock_t)-1;
+    }
+    return (clock_t)ticks;
+}
 
 static BOOL CALLBACK
 iperf_win32_start_winsock(PINIT_ONCE once, PVOID parameter, PVOID *context)
@@ -26,7 +158,7 @@ iperf_win32_init(void)
         return -1;
     }
     if (iperf_wsa_result != 0) {
-        errno = EIO;
+        iperf_win32_set_errno(iperf_wsa_result);
         return -1;
     }
     return 0;
@@ -108,8 +240,7 @@ iperf_win32_wait_readable(SOCKET socket, unsigned int timeout_ms)
 
     rc = select(0, &read_set, NULL, NULL, &timeout);
     if (rc == SOCKET_ERROR) {
-        int error = WSAGetLastError();
-        errno = error == WSAEINTR ? EINTR : EIO;
+        iperf_win32_set_errno(WSAGetLastError());
         return -1;
     }
     return rc;

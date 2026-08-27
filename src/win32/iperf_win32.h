@@ -7,6 +7,8 @@
 #include <pthread.h>
 #include <errno.h>
 
+int iperf_win32_errno_from_wsa(int error);
+void iperf_win32_set_errno(int error);
 int iperf_win32_init(void);
 int iperf_win32_process_exists(long pid);
 int iperf_win32_kill(long pid, int sig);

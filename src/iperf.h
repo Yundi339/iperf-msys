@@ -320,6 +320,7 @@ struct iperf_test
     TAILQ_HEAD(xbind_addrhead, xbind_entry) xbind_addrs; /* all -X opts */
     int       bind_port;                        /* --cport option */
     int       server_port;
+    int       udp_connect_port;                  /* current UDP data port negotiated by the client */
     int       omit;                             /* duration of omit period (-O flag) */
     int       duration;                         /* total duration of test (-t flag) */
     int       max_server_duration;               /* maximum possible duration of test as enforced by the server (--max-server-duration flag) */

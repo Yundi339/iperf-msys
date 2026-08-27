@@ -1,6 +1,10 @@
 #ifndef IPERF_WIN32_SYS_MMAN_H
 #define IPERF_WIN32_SYS_MMAN_H
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
 #include <windows.h>
 #include <io.h>
 #include <stdint.h>

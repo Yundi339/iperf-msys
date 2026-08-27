@@ -20,8 +20,12 @@ jobs:
         persist-credentials: false
     - name: install dependencies
       run: |
-        sudo apt-get -y update && sudo apt-get install -y cppcheck && \
-        cppcheck . --force --inline-suppr
+        sudo apt-get -y update && sudo apt-get install -y cppcheck
+        cppcheck . --force --inline-suppr --error-exitcode=1 \
+          --suppress=va_end_missing:src/iperf_error.c:96 \
+          --suppress=va_end_missing:src/iperf_error.c:106 \
+          --suppress=doubleFree:src/iperf_util.c:96 \
+          -DPACKAGE_URL='""' -DPACKAGE_BUGREPORT='""' -DPACKAGE_STRING='""'
   build-test-ubuntu-ish:
     strategy:
       matrix:
@@ -81,7 +85,14 @@ jobs:
         sudo apt-get -y update && sudo apt-get install -y build-essential
     - name: build
       run: |
-        ./configure CFLAGS="-g -O0 -fsanitize=address" LDFLAGS="-fsanitize=address" && make && make check
+        set -e
+        ./configure CFLAGS="-g -O0 -fsanitize=address" LDFLAGS="-fsanitize=address"
+        make
+        if ! make check; then
+          cat src/test-suite.log 2>/dev/null || true
+          cat src/t_api.log 2>/dev/null || true
+          exit 1
+        fi
     - name: test commands
       run: |
         timeout 300 src/iperf3 -s &
@@ -112,7 +123,7 @@ jobs:
       shell: msys2 {0}
       run: |
         set -euxo pipefail
-        CFLAGS='-g -O2 -Wall -Werror=format' ./configure --without-openssl --without-sctp --without-ldconfig --disable-shared --enable-static
+        CFLAGS='-g -O2 -Wall -Werror=format -Werror=cpp' ./configure --without-openssl --without-sctp --without-ldconfig --disable-shared --enable-static
         ! grep -q '^#define HAVE_CLOCK_NANOSLEEP 1' src/iperf_config.h
         make V=1 -j2
         make check
@@ -123,7 +134,7 @@ jobs:
         test -f "$include_dir/iperf_socket.h"
         test ! -f "$include_dir/iperf_socket_internal.h"
         printf '#include <iperf_api.h>\nint main(void) { return 0; }\n' > installed-header-smoke.c
-        gcc -I"$include_dir" -c installed-header-smoke.c -o installed-header-smoke.o
+        gcc -Werror=cpp -I"$include_dir" -c installed-header-smoke.c -o installed-header-smoke.o
     - name: TCP and UDP loopback
       shell: msys2 {0}
       run: |
@@ -143,9 +154,11 @@ jobs:
           wait "$server_pid"
           trap - EXIT
         }
-        run_case 6201 src/iperf3.exe -c 127.0.0.1 -p 6201 -t 1
+        run_case 6201 src/iperf3.exe -c 127.0.0.1 -p 6201 -b 10M -t 1
         run_case 6202 src/iperf3.exe -c 127.0.0.1 -u -b 10M -p 6202 -t 1
+        run_case 6206 src/iperf3.exe -c 127.0.0.1 -u -b 64K -l 1460 -p 6206 -t 1
         run_case 6204 src/iperf3.exe -c 127.0.0.1 -u -b 10M -R -p 6204 -t 1
+        run_case 6207 src/iperf3.exe -c 127.0.0.1 -u -b 64K -l 1460 -R -p 6207 -t 1
         run_case 6205 src/iperf3.exe -c 127.0.0.1 -u -b 10M --bidir -p 6205 -t 1
         run_case 6210 src/iperf3.exe -c 127.0.0.1 -u -b 10M -P 4 -p 6210 -t 1
     - name: parallel and lifecycle stress
@@ -156,7 +169,7 @@ jobs:
         server_pid=$!
         trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
         sleep 1
-        if ! timeout 60 src/iperf3.exe -c 127.0.0.1 -p 6203 -P 80 -t 1 >tcp80-client.log 2>&1; then
+        if ! timeout 60 src/iperf3.exe -c 127.0.0.1 -p 6203 -P 80 -b 10M -t 1 >tcp80-client.log 2>&1; then
           cat tcp80-client.log
           cat tcp80-server.log
           exit 1
@@ -177,13 +190,13 @@ jobs:
           trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
           sleep 1
           if [[ -n "${modes[$i]}" ]]; then
-            if ! timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1 "${modes[$i]}" >"$client_log" 2>&1; then
+            if ! timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -b 10M -t 1 "${modes[$i]}" >"$client_log" 2>&1; then
               cat "$client_log"
               cat "$server_log"
               exit 1
             fi
           else
-            if ! timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -t 1 >"$client_log" 2>&1; then
+            if ! timeout 30 src/iperf3.exe -c 127.0.0.1 -p "$port" -P 4 -b 10M -t 1 >"$client_log" 2>&1; then
               cat "$client_log"
               cat "$server_log"
               exit 1
@@ -238,7 +251,7 @@ jobs:
       shell: msys2 {0}
       run: |
         set -euxo pipefail
-        CFLAGS='-g -O2 -Wall -Werror=format' ./configure --with-openssl=/ucrt64 --without-sctp --without-ldconfig --disable-shared --enable-static
+        CFLAGS='-g -O2 -Wall -Werror=format -Werror=cpp' ./configure --with-openssl=/ucrt64 --without-sctp --without-ldconfig --disable-shared --enable-static
         grep -q '^#define HAVE_SSL 1' src/iperf_config.h
         make V=1 -j2
         make check

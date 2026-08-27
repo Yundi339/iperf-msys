@@ -49,6 +49,7 @@
 #include "cjson.h"
 #include "iperf.h"
 #include "iperf_api.h"
+#include "iperf_util.h"
 
 /*
  * Read entropy from /dev/urandom
@@ -129,7 +130,7 @@ void fill_with_repeating_pattern(void *out, size_t outsize)
  */
 
 void
-make_cookie(const char *cookie)
+make_cookie(char *cookie)
 {
     unsigned char *out = (unsigned char*)cookie;
     size_t pos;
@@ -153,7 +154,7 @@ make_cookie(const char *cookie)
  */
 
 int
-is_closed(int fd)
+is_closed(iperf_socket_t fd)
 {
     struct timeval tv;
     fd_set readset;
