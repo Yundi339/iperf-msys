@@ -103,6 +103,55 @@ iperf_win32_set_errno(int error)
     errno = iperf_win32_errno_from_wsa(error);
 }
 
+int
+iperf_win32_errno_from_system(DWORD error)
+{
+    switch (error) {
+    case ERROR_SUCCESS:
+        return 0;
+    case ERROR_ACCESS_DENIED:
+        return EPERM;
+    case ERROR_INVALID_HANDLE:
+        return EBADF;
+    case ERROR_INVALID_PARAMETER:
+        return EINVAL;
+    case ERROR_NOT_ENOUGH_MEMORY:
+    case ERROR_OUTOFMEMORY:
+        return ENOMEM;
+#ifdef ERROR_NOT_SUPPORTED
+    case ERROR_NOT_SUPPORTED:
+        return ENOTSUP;
+#endif
+    default:
+        return EIO;
+    }
+}
+
+void
+iperf_win32_set_system_errno(DWORD error)
+{
+    errno = iperf_win32_errno_from_system(error);
+}
+
+BOOL
+iperf_win32_get_process_affinity_mask(HANDLE process, PDWORD_PTR process_mask,
+                                      PDWORD_PTR system_mask)
+{
+    BOOL rc = (GetProcessAffinityMask)(process, process_mask, system_mask);
+    if (!rc)
+        iperf_win32_set_system_errno(GetLastError());
+    return rc;
+}
+
+BOOL
+iperf_win32_set_process_affinity_mask(HANDLE process, DWORD_PTR process_mask)
+{
+    BOOL rc = (SetProcessAffinityMask)(process, process_mask);
+    if (!rc)
+        iperf_win32_set_system_errno(GetLastError());
+    return rc;
+}
+
 static BOOL CALLBACK
 iperf_win32_start_winsock(PINIT_ONCE once, PVOID parameter, PVOID *context)
 {
