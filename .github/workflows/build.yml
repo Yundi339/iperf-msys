@@ -134,6 +134,8 @@ jobs:
         test ! -f "$include_dir/iperf_socket_internal.h"
         printf '#include <iperf_api.h>\nint main(void) { return 0; }\n' > installed-header-smoke.c
         gcc -Werror=cpp -I"$include_dir" -c installed-header-smoke.c -o installed-header-smoke.o
+        printf '#include <iperf_api.h>\nint main() { return 0; }\n' > installed-header-smoke.cpp
+        g++ -std=c++17 -Werror=cpp -I"$include_dir" -c installed-header-smoke.cpp -o installed-header-smoke-cpp.o
     - name: TCP and UDP loopback
       shell: msys2 {0}
       run: |
