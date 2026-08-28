@@ -42,7 +42,6 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/utsname.h>
-#include <time.h>
 #include <errno.h>
 #include <fcntl.h>
 
@@ -209,10 +208,8 @@ void
 cpu_util(double pcpu[3])
 {
     static struct iperf_time last;
-    static clock_t clast;
     static struct rusage rlast;
     struct iperf_time now, temp_time;
-    clock_t ctemp;
     struct rusage rtemp;
     double timediff;
     double userdiff;
@@ -220,13 +217,11 @@ cpu_util(double pcpu[3])
 
     if (pcpu == NULL) {
         iperf_time_now(&last);
-        clast = clock();
 	getrusage(RUSAGE_SELF, &rlast);
         return;
     }
 
     iperf_time_now(&now);
-    ctemp = clock();
     getrusage(RUSAGE_SELF, &rtemp);
 
     iperf_time_diff(&now, &last, &temp_time);
@@ -237,9 +232,9 @@ cpu_util(double pcpu[3])
     systemdiff = ((rtemp.ru_stime.tv_sec * 1000000.0 + rtemp.ru_stime.tv_usec) -
                   (rlast.ru_stime.tv_sec * 1000000.0 + rlast.ru_stime.tv_usec));
 
-    pcpu[0] = (((ctemp - clast) * 1000000.0 / CLOCKS_PER_SEC) / timediff) * 100;
     pcpu[1] = (userdiff / timediff) * 100;
     pcpu[2] = (systemdiff / timediff) * 100;
+    pcpu[0] = pcpu[1] + pcpu[2];
 }
 
 const char *
