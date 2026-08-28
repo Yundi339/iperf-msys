@@ -89,6 +89,28 @@ int test_iperf_win32_errno_mapping(void)
     return 0;
 }
 
+int test_iperf_win32_system_errno_mapping(void)
+{
+    DWORD_PTR process_mask = 0;
+    DWORD_PTR system_mask = 0;
+
+    assert(iperf_win32_errno_from_system(ERROR_SUCCESS) == 0);
+    assert(iperf_win32_errno_from_system(ERROR_ACCESS_DENIED) == EPERM);
+    assert(iperf_win32_errno_from_system(ERROR_INVALID_HANDLE) == EBADF);
+    assert(iperf_win32_errno_from_system(ERROR_INVALID_PARAMETER) == EINVAL);
+    assert(iperf_win32_errno_from_system(ERROR_NOT_ENOUGH_MEMORY) == ENOMEM);
+
+    errno = 0;
+    assert(iperf_win32_get_process_affinity_mask(NULL, &process_mask,
+                                                  &system_mask) == FALSE);
+    assert(errno == EBADF);
+
+    errno = 0;
+    assert(iperf_win32_set_process_affinity_mask(NULL, 1) == FALSE);
+    assert(errno == EBADF);
+    return 0;
+}
+
 int test_iperf_win32_cpu_util_consistency(void)
 {
     double pcpu[3];
@@ -232,6 +254,7 @@ main(int argc, char **argv)
 
 #ifdef _WIN32
     ret += test_iperf_win32_errno_mapping();
+    ret += test_iperf_win32_system_errno_mapping();
     ret += test_iperf_win32_cpu_util_consistency();
     ret += test_iperf_win32_getrusage_errors();
     ret += test_iperf_win32_is_closed_socket();
