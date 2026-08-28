@@ -120,7 +120,7 @@ iperf_win32_errno_from_system(DWORD error)
         return ENOMEM;
 #ifdef ERROR_NOT_SUPPORTED
     case ERROR_NOT_SUPPORTED:
-        return ENOTSUP;
+        return EOPNOTSUPP;
 #endif
     default:
         return EIO;
