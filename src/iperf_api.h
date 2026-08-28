@@ -47,13 +47,17 @@ extern "C" { /* open extern "C" */
 #endif
 
 /*
- * Atomic types highly desired, but if not, we approximate what we need
- * with normal integers and warn.
+ * Atomic types are highly desired.  C consumers without C11 atomics keep the
+ * historical warning and integer fallback.  C++ consumers use the same ABI
+ * fallback without warning because C11 <stdatomic.h> is not a portable C++
+ * facility before C++23.
  */
 #ifdef HAVE_STDATOMIC_H
 #include <stdatomic.h>
 #else
+#ifndef __cplusplus
 #warning "No <stdatomic.h> available"
+#endif
 typedef uint64_t atomic_uint_fast64_t;
 #endif // HAVE_STDATOMIC_H
 
@@ -471,7 +475,7 @@ enum {
     IESENDMESSAGE = 111,    // Unable to send control message to client/server (check perror)
     IERECVMESSAGE = 112,    // Unable to receive control message from client/server (check perror)
     IESENDPARAMS = 113,     // Unable to send parameters to server (check perror)
-    IERECVPARAMS = 114,     // Unable to receive parameters from client (check perror)
+    IERECVPARAMS = 114,     // Unable to receive parameters from client/server (check perror)
     IEPACKAGERESULTS = 115, // Unable to package results (check perror)
     IESENDRESULTS = 116,    // Unable to send results to client/server (check perror)
     IERECVRESULTS = 117,    // Unable to receive results from client/server (check perror)
@@ -495,7 +499,7 @@ enum {
     IEPIDFILE = 135,	    // Unable to write PID file
     IEV6ONLY = 136,  	    // Unable to set/unset IPV6_V6ONLY (check perror)
     IESETSCTPDISABLEFRAG = 137, // Unable to set SCTP Fragmentation (check perror)
-    IESETSCTPNSTREAM= 138,  //  Unable to set SCTP number of streams (check perror)
+    IESETSCTPNSTREAM= 138,  //  Unable to set SCTP number of streams
     IESETSCTPBINDX= 139,    // Unable to process sctp_bindx() parameters
     IESETPACING= 140,       // Unable to set socket pacing rate
     IESETBUF2= 141,	    // Socket buffer size incorrect (written value != read value)
@@ -528,7 +532,7 @@ enum {
     IESTREAMCLOSE = 207,    // Stream has closed unexpectedly
     IESTREAMID = 208,       // Stream has invalid ID
     /* Timer errors */
-    IENEWTIMER = 300,       // Unable to create new timer (check perror)
+    IENEWTIMER = 300,       // Unable to create a new timer (check perror)
     IEUPDATETIMER = 301,    // Unable to update timer (check perror)
 };
 
