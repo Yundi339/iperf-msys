@@ -28,6 +28,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -159,6 +160,21 @@ int test_iperf_win32_is_closed_socket(void)
     return 0;
 }
 
+int test_iperf_win32_fcntl_getfl(void)
+{
+    iperf_socket_t s;
+
+    s = socket(AF_INET, SOCK_STREAM, 0);
+    assert(s != IPERF_INVALID_SOCKET);
+    assert(fcntl(s, F_GETFL, 0) == 0);
+    assert(IPERF_SOCKET_CLOSE(s) == 0);
+
+    errno = 0;
+    assert(fcntl(s, F_GETFL, 0) == -1);
+    assert(errno == EBADF);
+    return 0;
+}
+
 int test_iperf_win32_socket_timeout_roundtrip(void)
 {
     iperf_socket_t s;
@@ -258,6 +274,7 @@ main(int argc, char **argv)
     ret += test_iperf_win32_cpu_util_consistency();
     ret += test_iperf_win32_getrusage_errors();
     ret += test_iperf_win32_is_closed_socket();
+    ret += test_iperf_win32_fcntl_getfl();
     ret += test_iperf_win32_socket_timeout_roundtrip();
 #endif
 
