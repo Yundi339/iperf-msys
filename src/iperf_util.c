@@ -92,6 +92,7 @@ int readentropy(void *out, size_t outsize)
                       rndfile,
                       is_eof ? "EOF" : strerror(errno));
     }
+    /* cppcheck-suppress doubleFree -- iperf_errexit() above does not return. */
     fclose(frandom);
     return 0;
 }
