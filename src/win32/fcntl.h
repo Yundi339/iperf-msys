@@ -23,8 +23,20 @@ iperf_win32_fcntl(iperf_socket_t fd, int cmd, ...)
     int flags;
     u_long mode;
 
-    if (cmd == F_GETFL)
+    if (cmd == F_GETFL) {
+        int socket_type;
+        int optlen = sizeof(socket_type);
+
+        /*
+         * The compatibility layer does not track nonblocking state because
+         * timeout_connect() only asks about newly-created blocking sockets.
+         * Still validate the handle so F_GETFL does not report success for a
+         * closed or non-socket descriptor.
+         */
+        if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &socket_type, &optlen) == SOCKET_ERROR)
+            return -1;
         return 0;
+    }
     if (cmd != F_SETFL) {
         errno = EINVAL;
         return -1;
