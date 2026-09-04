@@ -1,10 +1,8 @@
 #include "iperf_win32.h"
 
 #include <errno.h>
-#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
-#include <time.h>
 
 static INIT_ONCE iperf_wsa_once = INIT_ONCE_STATIC_INIT;
 static int iperf_wsa_result = WSASYSNOTREADY;
@@ -105,38 +103,53 @@ iperf_win32_set_errno(int error)
     errno = iperf_win32_errno_from_wsa(error);
 }
 
-clock_t
-iperf_win32_clock(void)
+int
+iperf_win32_errno_from_system(DWORD error)
 {
-    FILETIME creation_time;
-    FILETIME exit_time;
-    FILETIME kernel_time;
-    FILETIME user_time;
-    ULARGE_INTEGER kernel;
-    ULARGE_INTEGER user;
-    ULONGLONG cpu_100ns;
-    ULONGLONG ticks;
-
-    if (!GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
-                         &kernel_time, &user_time)) {
-        errno = EIO;
-        return (clock_t)-1;
+    switch (error) {
+    case ERROR_SUCCESS:
+        return 0;
+    case ERROR_ACCESS_DENIED:
+        return EPERM;
+    case ERROR_INVALID_HANDLE:
+        return EBADF;
+    case ERROR_INVALID_PARAMETER:
+        return EINVAL;
+    case ERROR_NOT_ENOUGH_MEMORY:
+    case ERROR_OUTOFMEMORY:
+        return ENOMEM;
+#ifdef ERROR_NOT_SUPPORTED
+    case ERROR_NOT_SUPPORTED:
+        return EOPNOTSUPP;
+#endif
+    default:
+        return EIO;
     }
+}
 
-    kernel.LowPart = kernel_time.dwLowDateTime;
-    kernel.HighPart = kernel_time.dwHighDateTime;
-    user.LowPart = user_time.dwLowDateTime;
-    user.HighPart = user_time.dwHighDateTime;
-    cpu_100ns = kernel.QuadPart + user.QuadPart;
+void
+iperf_win32_set_system_errno(DWORD error)
+{
+    errno = iperf_win32_errno_from_system(error);
+}
 
-    ticks = (cpu_100ns / 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC;
-    ticks += ((cpu_100ns % 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC) /
-             10000000ULL;
-    if (ticks > (ULONGLONG)LONG_MAX) {
-        errno = EIO;
-        return (clock_t)-1;
-    }
-    return (clock_t)ticks;
+BOOL
+iperf_win32_get_process_affinity_mask(HANDLE process, PDWORD_PTR process_mask,
+                                      PDWORD_PTR system_mask)
+{
+    BOOL rc = (GetProcessAffinityMask)(process, process_mask, system_mask);
+    if (!rc)
+        iperf_win32_set_system_errno(GetLastError());
+    return rc;
+}
+
+BOOL
+iperf_win32_set_process_affinity_mask(HANDLE process, DWORD_PTR process_mask)
+{
+    BOOL rc = (SetProcessAffinityMask)(process, process_mask);
+    if (!rc)
+        iperf_win32_set_system_errno(GetLastError());
+    return rc;
 }
 
 static BOOL CALLBACK

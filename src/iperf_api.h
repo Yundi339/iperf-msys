@@ -47,13 +47,17 @@ extern "C" { /* open extern "C" */
 #endif
 
 /*
- * Atomic types highly desired, but if not, we approximate what we need
- * with normal integers and warn.
+ * Atomic types are highly desired.  C consumers without C11 atomics keep the
+ * historical warning and integer fallback.  C++ consumers use the same ABI
+ * fallback without warning because C11 <stdatomic.h> is not a portable C++
+ * facility before C++23.
  */
 #ifdef HAVE_STDATOMIC_H
 #include <stdatomic.h>
 #else
+#ifndef __cplusplus
 #warning "No <stdatomic.h> available"
+#endif
 typedef uint64_t atomic_uint_fast64_t;
 #endif // HAVE_STDATOMIC_H
 

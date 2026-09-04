@@ -28,10 +28,10 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 #include <sys/resource.h>
 
 #include "iperf.h"
@@ -74,25 +74,6 @@ int test_iperf_udp_connect_port_state(struct iperf_test *test)
 }
 
 #ifdef _WIN32
-static clock_t
-filetimes_to_clock(const FILETIME *kernel_time, const FILETIME *user_time)
-{
-    ULARGE_INTEGER kernel;
-    ULARGE_INTEGER user;
-    ULONGLONG cpu_100ns;
-    ULONGLONG ticks;
-
-    kernel.LowPart = kernel_time->dwLowDateTime;
-    kernel.HighPart = kernel_time->dwHighDateTime;
-    user.LowPart = user_time->dwLowDateTime;
-    user.HighPart = user_time->dwHighDateTime;
-    cpu_100ns = kernel.QuadPart + user.QuadPart;
-    ticks = (cpu_100ns / 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC;
-    ticks += ((cpu_100ns % 10000000ULL) * (ULONGLONG)CLOCKS_PER_SEC) /
-             10000000ULL;
-    return (clock_t)ticks;
-}
-
 int test_iperf_win32_errno_mapping(void)
 {
     assert(iperf_win32_errno_from_wsa(0) == 0);
@@ -109,39 +90,42 @@ int test_iperf_win32_errno_mapping(void)
     return 0;
 }
 
-int test_iperf_win32_clock_cpu_time(void)
+int test_iperf_win32_system_errno_mapping(void)
 {
-    FILETIME creation_time;
-    FILETIME exit_time;
-    FILETIME before_kernel_time;
-    FILETIME before_user_time;
-    FILETIME after_kernel_time;
-    FILETIME after_user_time;
-    clock_t before;
-    clock_t measured;
-    clock_t after;
+    DWORD_PTR process_mask = 0;
+    DWORD_PTR system_mask = 0;
+
+    assert(iperf_win32_errno_from_system(ERROR_SUCCESS) == 0);
+    assert(iperf_win32_errno_from_system(ERROR_ACCESS_DENIED) == EPERM);
+    assert(iperf_win32_errno_from_system(ERROR_INVALID_HANDLE) == EBADF);
+    assert(iperf_win32_errno_from_system(ERROR_INVALID_PARAMETER) == EINVAL);
+    assert(iperf_win32_errno_from_system(ERROR_NOT_ENOUGH_MEMORY) == ENOMEM);
+
+    errno = 0;
+    assert(iperf_win32_get_process_affinity_mask(NULL, &process_mask,
+                                                  &system_mask) == FALSE);
+    assert(errno == EBADF);
+
+    errno = 0;
+    assert(iperf_win32_set_process_affinity_mask(NULL, 1) == FALSE);
+    assert(errno == EBADF);
+    return 0;
+}
+
+int test_iperf_win32_cpu_util_consistency(void)
+{
+    double pcpu[3];
 
     /*
-     * Ensure a wall-clock implementation of clock() would be observably
-     * different from process CPU time, then bracket clock() with the same
-     * GetProcessTimes source instead of imposing a scheduler-sensitive delay
-     * bound between two independent snapshots.
+     * A wall-clock clock() implementation would report roughly 100% here
+     * even though the process is sleeping.  Total CPU must instead be the
+     * same process user+system time represented by getrusage().
      */
+    cpu_util(NULL);
     Sleep(250);
+    cpu_util(pcpu);
 
-    assert(GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
-                           &before_kernel_time, &before_user_time) != 0);
-    before = filetimes_to_clock(&before_kernel_time, &before_user_time);
-
-    measured = clock();
-    assert(measured != (clock_t)-1);
-
-    assert(GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
-                           &after_kernel_time, &after_user_time) != 0);
-    after = filetimes_to_clock(&after_kernel_time, &after_user_time);
-
-    assert(measured >= before);
-    assert(measured <= after);
+    assert(pcpu[0] == pcpu[1] + pcpu[2]);
     return 0;
 }
 
@@ -173,6 +157,21 @@ int test_iperf_win32_is_closed_socket(void)
     assert(is_closed(s) == 0);
     assert(IPERF_SOCKET_CLOSE(s) == 0);
     assert(is_closed(s) == 1);
+    return 0;
+}
+
+int test_iperf_win32_fcntl_getfl(void)
+{
+    iperf_socket_t s;
+
+    s = socket(AF_INET, SOCK_STREAM, 0);
+    assert(s != IPERF_INVALID_SOCKET);
+    assert(fcntl(s, F_GETFL, 0) == 0);
+    assert(IPERF_SOCKET_CLOSE(s) == 0);
+
+    errno = 0;
+    assert(fcntl(s, F_GETFL, 0) == -1);
+    assert(errno == EBADF);
     return 0;
 }
 
@@ -271,9 +270,11 @@ main(int argc, char **argv)
 
 #ifdef _WIN32
     ret += test_iperf_win32_errno_mapping();
-    ret += test_iperf_win32_clock_cpu_time();
+    ret += test_iperf_win32_system_errno_mapping();
+    ret += test_iperf_win32_cpu_util_consistency();
     ret += test_iperf_win32_getrusage_errors();
     ret += test_iperf_win32_is_closed_socket();
+    ret += test_iperf_win32_fcntl_getfl();
     ret += test_iperf_win32_socket_timeout_roundtrip();
 #endif
 

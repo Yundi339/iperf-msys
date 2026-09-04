@@ -539,6 +539,8 @@ iperf_udp_accept(struct iperf_test *test)
     socklen_t len;
     int       sz;
     iperf_socket_t s;
+    iperf_socket_t new_listener;
+    int       saved_errno;
     int	      rc;
     int       listener_port = test->server_port;
 #ifdef _WIN32
@@ -648,22 +650,27 @@ iperf_udp_accept(struct iperf_test *test)
 #endif
 
     /*
-     * Create a new "listening" socket to replace the one we were using before.
-     * Additional Windows UDP streams use consecutive ports because sharing the
-     * original port among multiple connected UDP sockets is not deterministic.
+     * Create the replacement listener before dropping test's ownership of the
+     * connected socket.  If netannounce() fails, cleanup can still close the
+     * old prot_listener instead of leaking the not-yet-adopted data socket.
      */
-    FD_CLR(test->prot_listener, &test->read_set); // No control messages from old listener
-    test->prot_listener = netannounce(test->settings->domain, Pudp, test->bind_address, test->bind_dev, listener_port);
-    if (test->prot_listener < 0) {
+    new_listener = netannounce(test->settings->domain, Pudp, test->bind_address,
+                               test->bind_dev, listener_port);
+    if (new_listener < 0) {
         i_errno = IESTREAMLISTEN;
         return -1;
     }
 
+    FD_CLR(test->prot_listener, &test->read_set); // No control messages from old listener
+    test->prot_listener = new_listener;
     FD_SET(test->prot_listener, &test->read_set);
     test->max_fd = (test->max_fd < test->prot_listener) ? test->prot_listener : test->max_fd;
 
     /* Let the client know we're ready to "accept" another UDP stream. */
     if (send(s, (const char *)&buf, sizeof(buf), 0) < 0) {
+        saved_errno = errno;
+        IPERF_SOCKET_CLOSE(s);
+        errno = saved_errno;
         i_errno = IESTREAMWRITE;
         return -1;
     }
